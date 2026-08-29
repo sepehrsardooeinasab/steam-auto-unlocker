@@ -5,4 +5,4 @@ __pycache__/
 # Per-game generated/runtime data
 csvs/
 jsons/
-SH_achievements.txt
+archifarm/

@@ -1,7 +1,7 @@
 import time
 from datetime import datetime, timedelta
 
-from unlocker.api import send_command, send_aset
+from unlocker.api import API_URL, send_command, send_aset
 from unlocker.state import (
     DEFAULT_PROGRESS,
     profile_paths,
@@ -86,6 +86,10 @@ def run(game_name=None):
                 i += 1
                 continue
 
+            if status == "unreachable":
+                print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL} — is it running?")
+                return
+
             if status == "unknown":
                 print(f"ERROR: unexpected response for {ach['id']}: {result}")
                 return
@@ -116,6 +120,12 @@ def run(game_name=None):
 
         issued_at = datetime.now()
         status, result = send_aset(appid, ach["id"])
+
+        if status == "unreachable":
+            print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL} — is it running?")
+            progress["next_unlock_at"] = datetime.now().isoformat()
+            save_progress(progress_path, progress)
+            return
 
         if status == "unknown":
             print(f"ERROR: unexpected response for {ach['id']}: {result}")

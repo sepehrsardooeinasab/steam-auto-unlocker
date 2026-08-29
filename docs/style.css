@@ -1,0 +1,501 @@
+  :root {
+    --bg: #0b0b0d;
+    --nav-bg: #141416;
+    --nav-border: #262629;
+    --nav-text: #8c8c92;
+    --nav-text-active: #f2f2f0;
+    --box-bg: #f5f5f2;
+    --box-bg-alt: #ebebe7;
+    --box-text: #17171a;
+    --box-text-dim: #6c6c72;
+    --box-border: #d8d8d3;
+    --accent: #35c9b6;
+    --accent-strong: #1fa593;
+    --accent-contrast: #06201d;
+    --danger: #c9423b;
+    --danger-bg: #f8e6e4;
+    --warn: #b5791a;
+    --warn-bg: #f7ecd8;
+    --info: #3d6fb0;
+    --info-bg: #e3ecf7;
+  }
+
+  * { box-sizing: border-box; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+  html, body { background: var(--bg); }
+
+  body {
+    margin: 0;
+    color: var(--nav-text-active);
+    font-family: "Archivo", system-ui, sans-serif;
+    min-height: 100vh;
+  }
+
+  /* faint grid texture, nod to the checkerboard-collage reference */
+  .grid-texture {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: radial-gradient(ellipse at 50% 0%, black 0%, transparent 75%);
+  }
+
+  header.masthead {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 1.1rem 1.5rem;
+    border-bottom: 1px solid var(--nav-border);
+  }
+
+  .masthead .brand {
+    font-weight: 800;
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--nav-text-active);
+  }
+  .masthead .brand span { color: var(--accent); }
+
+  .masthead .tagline {
+    font-size: 0.8rem;
+    color: var(--nav-text);
+    letter-spacing: 0.01em;
+  }
+
+  .shell {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0;
+    align-items: stretch;
+    justify-content: center;
+    padding: 1.75rem 1.5rem;
+  }
+
+  @media (max-width: 900px) {
+    /* Rotate the whole console 90°: Joy-Cons become a top bar and a bottom
+       bar (the .shell grid already stacks its 3 children into one column
+       here), so collapsing should shrink height, not width, and the
+       collapse-arrow icons should point up/down, not left/right. */
+    .shell { grid-template-columns: 1fr; }
+    .side-nav {
+      width: 100% !important;
+      flex-direction: column;
+      align-items: stretch;
+      border: 1px solid var(--nav-border) !important;
+      border-bottom: none !important;
+      border-radius: 18px 18px 0 0 !important;
+      margin-bottom: -1px;
+    }
+    .side-nav.right {
+      border-top: none !important;
+      border-bottom: 1px solid var(--nav-border) !important;
+      border-radius: 0 0 18px 18px !important;
+    }
+    .side-nav .nav-items { flex-direction: row; overflow-x: auto; }
+    .side-nav.collapsed { width: 100% !important; }
+
+    .collapse-btn svg { transform: rotate(-90deg) !important; }
+    .side-nav.right .collapse-btn svg { transform: rotate(90deg) !important; }
+    .side-nav.collapsed .collapse-btn svg { transform: rotate(90deg) !important; }
+    .side-nav.collapsed.right .collapse-btn svg { transform: rotate(-90deg) !important; }
+  }
+
+  /* Docked to the box like a Joy-Con to a Switch — and colored like one:
+     Joy-Con blue on the left, Joy-Con red on the right. Rounded on the
+     outer edge, flat where each panel meets the box, flush against it
+     (no gap/shadow seam) so the three pieces read as one console. */
+  .side-nav {
+    --nav-bg: #0f6f96;
+    --nav-border: #0a4f6b;
+    --nav-text: rgba(255, 255, 255, 0.68);
+    --nav-text-active: #ffffff;
+    --accent: rgba(255, 255, 255, 0.92);
+    --accent-contrast: #073b51;
+    width: 238px;
+    background: var(--nav-bg);
+    border: 1px solid var(--nav-border);
+    border-radius: 18px 0 0 18px;
+    border-right: none;
+    padding: 1rem 0.7rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    transition: width 0.18s ease;
+  }
+  .side-nav.right {
+    --nav-bg: #a8291b;
+    --nav-border: #7a1d12;
+    --accent-contrast: #4a0f08;
+    border-radius: 0 18px 18px 0;
+    border-right: 1px solid var(--nav-border);
+    border-left: none;
+  }
+  .side-nav.collapsed { width: 86px; }
+
+  .side-nav .nav-head {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 2.8rem;
+    padding: 0.3rem 0.5rem 1rem;
+    margin-bottom: 0.7rem;
+    border-bottom: 1px solid var(--nav-border);
+  }
+  .side-nav.collapsed .nav-head {
+    min-height: 2.3rem;
+    padding: 0.3rem 0.5rem 0.5rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .nav-head .nav-title {
+    flex: 1;
+    padding-right: 2.1rem;
+    font-weight: 800;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--nav-text-active);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .side-nav.right .nav-head .nav-title { padding-right: 0; padding-left: 2.1rem; }
+  .side-nav.collapsed .nav-head .nav-title { display: none; }
+
+  /* Absolutely positioned (instead of a flex sibling of nav-title) so it
+     stays in exactly the same spot whether the title is shown or hidden —
+     collapsing used to make it jump because the flex layout re-packed
+     around the now-missing title. top/bottom mirror nav-head's own
+     padding so "margin: auto 0" centers it in the same content band the
+     flex-centered title text sits in — not just the box's raw 50% mark,
+     which is off-center here since the padding itself is asymmetric. */
+  .collapse-btn {
+    position: absolute;
+    top: 0.3rem;
+    bottom: 1rem;
+    margin: auto 0;
+    right: 0.5rem;
+    flex: none;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 1px solid var(--nav-border);
+    background: rgba(0,0,0,0.1);
+    color: var(--nav-text-active);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .side-nav.right .collapse-btn { right: auto; left: 0.5rem; }
+  .side-nav.collapsed .collapse-btn { bottom: 0.5rem; }
+  .collapse-btn svg { width: 12px; height: 12px; transition: transform 0.18s ease; }
+  .side-nav.right .collapse-btn svg { transform: rotate(180deg); }
+  .side-nav.collapsed .collapse-btn svg { transform: rotate(180deg); }
+  .side-nav.collapsed.right .collapse-btn svg { transform: rotate(0deg); }
+  .collapse-btn:hover { background: rgba(0,0,0,0.22); }
+
+  .side-nav .nav-label {
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--nav-text);
+    padding: 0 0.8rem;
+    margin-bottom: 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .side-nav.collapsed .nav-label { display: none; }
+
+  .nav-items { display: flex; flex-direction: column; gap: 0.2rem; }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: 13px;
+    color: var(--nav-text);
+    font-family: "Archivo", sans-serif;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-align: left;
+    padding: 0.6rem 0.8rem;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .side-nav.collapsed .nav-item { justify-content: center; padding: 0.6rem; }
+  .side-nav.collapsed .nav-item .label { display: none; }
+
+  .nav-item .icon { flex: none; width: 19px; height: 19px; display: flex; align-items: center; justify-content: center; }
+  .nav-item .icon svg { width: 100%; height: 100%; }
+  .nav-item .label { overflow: hidden; text-overflow: ellipsis; }
+
+  .nav-item:hover { color: var(--nav-text-active); background: rgba(255,255,255,0.14); }
+  .nav-item.active { color: var(--accent-contrast); background: var(--accent); }
+  .nav-item.has-content:not(.active) .icon { color: var(--nav-text-active); }
+  .nav-item:focus-visible { outline: 2px solid var(--nav-text-active); outline-offset: 2px; }
+
+  main.stage {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+  }
+
+  .box {
+    background: var(--box-bg);
+    color: var(--box-text);
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 30px 60px -30px rgba(0,0,0,0.6);
+  }
+
+  .box-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.9rem 1.3rem;
+    border-bottom: 1px solid var(--box-border);
+    flex-wrap: wrap;
+  }
+  .box-header .title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .box-header .stats-strip {
+    display: flex;
+    gap: 1.2rem;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.72rem;
+    color: var(--box-text-dim);
+  }
+  .box-header .stats-strip b { color: var(--box-text); font-weight: 600; }
+
+  /* Fixed height so switching tabs (text/settings/json/csv) never
+     resizes the box. */
+  .box-content { padding: 1.3rem; height: 480px; overflow-y: auto; }
+
+  .view-pane { display: none; }
+  .view-pane.active { display: block; height: 100%; }
+
+  label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--box-text-dim);
+    margin-bottom: 0.4rem;
+  }
+  .field { margin-bottom: 1.1rem; }
+  .field small { display: block; margin-top: 0.3rem; font-size: 0.74rem; color: var(--box-text-dim); }
+
+  textarea, input[type="text"], input[type="number"] {
+    width: 100%;
+    background: #fff;
+    border: 1px solid var(--box-border);
+    border-radius: 3px;
+    color: var(--box-text);
+    padding: 0.55rem 0.65rem;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.85rem;
+  }
+  /* The pasted export is prose (achievement names/descriptions), not code
+     or data — a plain readable face suits it better than the mono font
+     used for IDs and file previews. */
+  textarea {
+    height: 320px;
+    resize: vertical;
+    line-height: 1.5;
+    font-family: "Archivo", sans-serif;
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+  input[type="number"] { font-variant-numeric: tabular-nums; }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent-strong); box-shadow: 0 0 0 3px rgba(53,201,182,0.18); }
+
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+  @media (max-width: 480px) { .row2 { grid-template-columns: 1fr; } }
+
+  .empty-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 0.5rem;
+    padding: 4rem 1rem;
+    color: var(--box-text-dim);
+  }
+  .empty-hint .glyph { font-size: 2rem; font-weight: 800; color: var(--box-border); }
+  .empty-hint p { max-width: 30ch; font-size: 0.88rem; margin: 0; }
+
+  .notice {
+    display: flex;
+    gap: 0.55rem;
+    align-items: flex-start;
+    border-radius: 3px;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.82rem;
+    margin-bottom: 0.6rem;
+  }
+  .notice.warn { background: var(--warn-bg); color: var(--warn); }
+  .notice.danger { background: var(--danger-bg); color: var(--danger); }
+  .notice.info { background: var(--info-bg); color: var(--info); }
+
+  pre.file-preview {
+    margin: 0;
+    background: var(--box-bg-alt);
+    border: 1px solid var(--box-border);
+    border-radius: 3px;
+    padding: 0.9rem 1rem;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    overflow: auto;
+    max-height: 400px;
+    color: var(--box-text);
+  }
+  .tok-key { color: var(--accent-strong); }
+  .tok-num { color: var(--info); }
+  .tok-bool { color: var(--danger); }
+
+  .table-wrap {
+    overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--box-border);
+    border-radius: 3px;
+  }
+  table.csv-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.76rem;
+    color: var(--box-text);
+  }
+  table.csv-table th {
+    position: sticky;
+    top: 0;
+    background: var(--box-text);
+    color: var(--box-bg);
+    text-align: left;
+    padding: 0.5rem 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  table.csv-table td {
+    padding: 0.4rem 0.7rem;
+    border-bottom: 1px solid var(--box-border);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--box-text);
+  }
+  table.csv-table tbody tr:nth-child(even) { background: var(--box-bg-alt); }
+  table.csv-table tbody tr:hover { background: rgba(53,201,182,0.1); }
+  table.csv-table tr.gap-row td {
+    background: var(--info-bg);
+    color: var(--info);
+    font-style: italic;
+    text-align: center;
+  }
+
+  .box-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 1rem 1.3rem;
+    border-top: 1px solid var(--box-border);
+    flex-wrap: wrap;
+  }
+
+  button {
+    font-family: "Archivo", sans-serif;
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+    transition: filter 0.12s ease, background 0.12s ease;
+  }
+  button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-primary { background: var(--box-text); color: var(--box-bg); }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-strong); color: #fff; }
+
+  .btn-ghost { background: transparent; border-color: var(--box-border); color: var(--box-text-dim); }
+  .btn-ghost:hover:not(:disabled) { border-color: var(--box-text-dim); color: var(--box-text); }
+
+  .folder-status {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.72rem;
+    color: var(--box-text-dim);
+    margin-left: auto;
+  }
+  .folder-status b { color: var(--accent-strong); }
+
+  details.hint { margin-top: 0.8rem; font-size: 0.82rem; color: var(--box-text-dim); }
+  details.hint summary { cursor: pointer; color: var(--accent-strong); font-weight: 600; }
+  details.hint pre {
+    background: var(--box-bg-alt);
+    border: 1px solid var(--box-border);
+    border-radius: 3px;
+    padding: 0.6rem 0.7rem;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.72rem;
+    color: var(--box-text-dim);
+    overflow-x: auto;
+    margin-top: 0.5rem;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 2.75rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    background: var(--nav-bg);
+    border: 1px solid var(--nav-border);
+    color: var(--nav-text-active);
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    box-shadow: 0 12px 32px -16px rgba(0,0,0,0.6);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
+    z-index: 20;
+  }
+  .toast.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }

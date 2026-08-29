@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unlock Scheduler</title>
+<link rel="icon" type="image/png" href="logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="grid-texture" aria-hidden="true"></div>
+
+<header class="masthead">
+  <div class="brand">UNLOCK<span>·</span>SCHEDULER</div>
+  <div class="tagline">SteamHunters export → delay &amp; session config, generated live in your browser.</div>
+</header>
+
+<div class="shell">
+  <nav class="side-nav" id="nav-panel-left" aria-label="Input">
+    <div class="nav-head">
+      <span class="nav-title">Input</span>
+      <button class="collapse-btn" id="collapse-left" type="button" aria-label="Collapse panel">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 2L3 5l3.5 3"/></svg>
+      </button>
+    </div>
+    <div class="nav-label">Menu</div>
+    <div class="nav-items">
+      <button class="nav-item active" id="nav-input" type="button" title="Paste your SteamHunters achievement export">
+        <span class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="2.5" width="12" height="15" rx="1.5"/><line x1="7" y1="7" x2="13" y2="7"/><line x1="7" y1="10" x2="13" y2="10"/><line x1="7" y1="13" x2="10.5" y2="13"/></svg></span>
+        <span class="label">Achievements</span>
+      </button>
+      <button class="nav-item" id="nav-settings" type="button" title="Settings">
+        <span class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="5" x2="17" y2="5"/><circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><line x1="3" y1="10" x2="17" y2="10"/><circle cx="7" cy="10" r="1.6" fill="currentColor" stroke="none"/><line x1="3" y1="15" x2="17" y2="15"/><circle cx="14" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg></span>
+        <span class="label">Settings</span>
+      </button>
+    </div>
+  </nav>
+
+  <main class="stage">
+    <div class="box">
+      <div class="box-header">
+        <div class="title" id="box-title">SteamHunter Text</div>
+        <div class="stats-strip" id="stats-strip" style="display:none"></div>
+      </div>
+
+      <div class="box-content">
+        <div class="view-pane active" data-view="input">
+          <div class="field">
+            <label for="export-text">Paste export</label>
+            <textarea id="export-text" spellcheck="false" placeholder="Paste the copied SteamHunters achievements page here…"></textarea>
+            <details class="hint">
+              <summary>Expected format</summary>
+              <pre>Achievement Name
+
+Description text
+
+2,504 / 5,219   97   29.8 %
+
+27 Aug '26 @ 02:47:45 pm
+
+
+(blank line, then next entry — locked ones just skip the timestamp)</pre>
+            </details>
+          </div>
+        </div>
+
+        <div class="view-pane" data-view="settings">
+          <div class="row2">
+            <div class="field">
+              <label for="appid">App ID</label>
+              <input type="number" id="appid" inputmode="numeric" placeholder="730" value="730">
+            </div>
+            <div class="field">
+              <label for="game-name">Game name (optional)</label>
+              <input type="text" id="game-name" placeholder="CS2" value="CS2">
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="gap-limit">Gap limit (hours)</label>
+              <input type="number" id="gap-limit" min="0" step="1" value="2">
+              <small>Gap between unlocks that starts a new session</small>
+            </div>
+            <div class="field">
+              <label for="cum-limit">Cumulative limit (hours)</label>
+              <input type="number" id="cum-limit" min="0" step="1" value="5">
+              <small>Max length before a session force-splits</small>
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="min-gap">Min gap (hours)</label>
+              <input type="number" id="min-gap" min="0" step="1" value="1">
+              <small>Warn if two sessions sit closer than this</small>
+            </div>
+            <div class="field">
+              <label>&nbsp;</label>
+              <button class="btn-ghost" id="reset-btn" type="button" style="width:100%">Reset all fields</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="view-pane" data-view="json">
+          <div id="json-slot"></div>
+        </div>
+        <div class="view-pane" data-view="csv-merged">
+          <div id="csv-merged-slot"></div>
+        </div>
+        <div class="view-pane" data-view="csv-sessions">
+          <div id="csv-sessions-slot"></div>
+        </div>
+        <div class="view-pane" data-view="csv-summary">
+          <div id="csv-summary-slot"></div>
+        </div>
+      </div>
+
+      <div class="box-footer">
+        <button class="btn-primary" id="download-btn" type="button" disabled>Download All</button>
+        <button class="btn-ghost" id="folder-btn" type="button" style="display:none">Choose save folder…</button>
+        <span class="folder-status" id="folder-status"></span>
+      </div>
+    </div>
+  </main>
+
+  <nav class="side-nav right" id="nav-panel-right" aria-label="Output">
+    <div class="nav-head">
+      <span class="nav-title">Output</span>
+      <button class="collapse-btn" id="collapse-right" type="button" aria-label="Collapse panel">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 2L3 5l3.5 3"/></svg>
+      </button>
+    </div>
+    <div class="nav-label">Menu</div>
+    <div class="nav-items">
+      <button class="nav-item" id="nav-json" type="button" title="Schedule (config.json)">
+        <span class="icon"><svg viewBox="0 0 20 20"><text x="10" y="14.5" text-anchor="middle" font-size="12" font-family="'JetBrains Mono',monospace" fill="currentColor">{ }</text></svg></span>
+        <span class="label">Schedule</span>
+      </button>
+      <button class="nav-item" id="nav-csv-merged" type="button" title="Full Timeline (merged.csv)">
+        <span class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><line x1="2.5" y1="8.5" x2="17.5" y2="8.5"/><line x1="2.5" y1="12.5" x2="17.5" y2="12.5"/><line x1="8" y1="4" x2="8" y2="16"/></svg></span>
+        <span class="label">Full Timeline</span>
+      </button>
+      <button class="nav-item" id="nav-csv-sessions" type="button" title="Sessions (sessions.csv)">
+        <span class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><line x1="2.5" y1="8.5" x2="17.5" y2="8.5"/><line x1="2.5" y1="12.5" x2="17.5" y2="12.5"/><line x1="8" y1="4" x2="8" y2="16"/></svg></span>
+        <span class="label">Sessions</span>
+      </button>
+      <button class="nav-item" id="nav-csv-summary" type="button" title="Session Summary (summary_session.csv)">
+        <span class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><line x1="2.5" y1="8.5" x2="17.5" y2="8.5"/><line x1="2.5" y1="12.5" x2="17.5" y2="12.5"/><line x1="8" y1="4" x2="8" y2="16"/></svg></span>
+        <span class="label">Summary</span>
+      </button>
+    </div>
+  </nav>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="script.js"></script>
+</body>
+</html>
