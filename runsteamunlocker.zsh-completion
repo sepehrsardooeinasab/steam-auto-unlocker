@@ -1,0 +1,7 @@
+_runsteamunlocker() {
+    local -a names
+    names=("${(@f)$(runsteamunlocker --list-configs 2>/dev/null)}")
+    _describe 'config' names
+}
+
+compdef _runsteamunlocker runsteamunlocker

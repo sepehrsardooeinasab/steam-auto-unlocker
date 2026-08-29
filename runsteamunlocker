@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Convenience launcher for the Steam achievement unlocker.
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JSONS_DIR="$PROJECT_DIR/jsons"
+ASF_BINARY="$PROJECT_DIR/archifarm/ArchiSteamFarm"
+ASF_SERVICE="$PROJECT_DIR/archifarm/ArchiSteamFarm-Service.sh"
+ASF_LOG="$PROJECT_DIR/archifarm/log.txt"
+
+show_help() {
+    cat <<'EOF'
+Usage: runsteamunlocker [<config-name> | -h | -c | -j]
+
+  <config-name>   Run the unlocker using jsons/config_<config-name>.json.
+                  Starts ArchiSteamFarm first if it isn't already running
+                  (waits 5s for it to come up), then runs run_unlocker.py.
+  -h, --help      Show this help.
+  -c              Open the project in VS Code.
+  -j              Open the JSON/unlock scheduler builder (docs/index.html).
+
+Tab-complete <config-name> to see available jsons/config_*.json profiles.
+EOF
+}
+
+list_configs() {
+    local f name
+    for f in "$JSONS_DIR"/config_*.json; do
+        [ -e "$f" ] || continue
+        name="$(basename "$f")"
+        name="${name#config_}"
+        name="${name%.json}"
+        echo "$name"
+    done
+}
+
+ensure_asf_running() {
+    if pgrep -f "$ASF_BINARY" > /dev/null 2>&1; then
+        return
+    fi
+    echo "ArchiSteamFarm isn't running, starting it..."
+    nohup "$ASF_SERVICE" --service >> "$ASF_LOG" 2>&1 &
+    disown
+    sleep 5
+}
+
+case "${1-}" in
+    -h|--help|"")
+        show_help
+        ;;
+    --list-configs)
+        list_configs
+        ;;
+    -c)
+        code "$PROJECT_DIR"
+        ;;
+    -j)
+        open "$PROJECT_DIR/docs/index.html"
+        ;;
+    -*)
+        echo "Unknown option: $1" >&2
+        show_help
+        exit 1
+        ;;
+    *)
+        name="$1"
+        config_path="$JSONS_DIR/config_${name}.json"
+        if [ ! -f "$config_path" ]; then
+            echo "No such config: $config_path" >&2
+            echo "Available: $(list_configs | tr '\n' ' ')" >&2
+            exit 1
+        fi
+        ensure_asf_running
+        exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "$name"
+        ;;
+esac
