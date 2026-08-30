@@ -331,6 +331,7 @@
 
     var errors = [];
     if (!appidVal || appidVal <= 0) errors.push("Enter a valid numeric App ID in Settings.");
+    if (!gameName) errors.push("Enter a game name in Settings.");
 
     var parsed = parseExport(els.exportText.value || "");
     if (parsed.list.length === 0) errors.push("No unlocked achievements with a valid timestamp were found in the pasted text.");
@@ -456,17 +457,27 @@
     debounceTimer = setTimeout(function () { recompute(); render(); }, 300);
   }
 
+  function resetSettingFields() {
+    els.appid.value = "";
+    els.gameName.value = "";
+    els.gapLimit.value = "3";
+    els.cumLimit.value = "6";
+    els.minGap.value = "1";
+  }
+
+  // Pasting a different game's export shouldn't carry over the previous
+  // game's appid/name/timing settings, so reset them the moment the export
+  // text changes. Registered before the scheduleRecompute loop below so it
+  // runs first and scheduleRecompute's saveDraft() sees the reset values.
+  els.exportText.addEventListener("input", resetSettingFields);
+
   [els.exportText, els.appid, els.gameName, els.gapLimit, els.cumLimit, els.minGap].forEach(function (el) {
     el.addEventListener("input", scheduleRecompute);
   });
 
   els.resetBtn.addEventListener("click", function () {
     els.exportText.value = "";
-    els.appid.value = "";
-    els.gameName.value = "";
-    els.gapLimit.value = "2";
-    els.cumLimit.value = "5";
-    els.minGap.value = "1";
+    resetSettingFields();
     try { localStorage.removeItem("unlock-scheduler-draft"); } catch (e) {}
     recompute();
     render();
