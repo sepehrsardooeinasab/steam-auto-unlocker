@@ -17,8 +17,6 @@ Usage: runsteamunlocker [<config-name> | -h | -a | -c | -j]
   -a              List available jsons/config_*.json profiles.
   -c              Open the project in VS Code.
   -j              Open the JSON/unlock scheduler builder.
-
-Tab-complete <config-name> to see available jsons/config_*.json profiles.
 EOF
 }
 
