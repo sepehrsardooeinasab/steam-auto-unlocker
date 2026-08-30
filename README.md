@@ -63,8 +63,6 @@ Put these lines in `~/.zshrc` — or, if you use oh-my-zsh, in a file under `~/.
 
 ```sh
 runsteamunlocker <config-name>   # run the unlocker using jsons/config_<config-name>.json
-runsteamunlocker --list-configs  # list available config names
-runsteamunlocker -j              # open the Unlock Scheduler locally
 runsteamunlocker -h              # help
 ```
 

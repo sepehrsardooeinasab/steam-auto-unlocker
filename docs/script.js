@@ -36,6 +36,7 @@
     var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); });
     var blocks = groupIntoBlocks(lines);
     var achievements = [];
+    var totalCount = 0;
 
     blocks.forEach(function (block, bi) {
       var orderIndex = bi + 1;
@@ -45,6 +46,7 @@
 
       var achName = block[idx];
       idx++;
+      totalCount++;
 
       var unlockTime = null;
       for (var i = idx; i < block.length; i++) {
@@ -57,8 +59,19 @@
       }
     });
 
+    // ach_id is the achievement's position as pasted, which must match the
+    // game's default/schema order (same order ASF's alist/aset use) for the
+    // generated config to target the right achievements. If the pasted
+    // timestamps already come out non-decreasing, that's a strong sign the
+    // page was sorted by unlock date instead, which would silently scramble
+    // ach_id even though the delay/session math below stays correct either
+    // way (it re-sorts by real timestamp regardless of paste order).
+    var sortedByDate = achievements.length > 1 && achievements.every(function (a, i) {
+      return i === 0 || a.unlock_time >= achievements[i - 1].unlock_time;
+    });
+
     achievements.sort(function (a, b) { return a.unlock_time - b.unlock_time; });
-    return achievements;
+    return {list: achievements, sortedByDate: sortedByDate, totalCount: totalCount};
   }
 
   function addDelays(list) {
@@ -318,13 +331,14 @@
 
     var errors = [];
     if (!appidVal || appidVal <= 0) errors.push("Enter a valid numeric App ID in Settings.");
+    if (!gameName) errors.push("Enter a game name in Settings.");
 
     var parsed = parseExport(els.exportText.value || "");
-    if (parsed.length === 0) errors.push("No unlocked achievements with a valid timestamp were found in the pasted text.");
+    if (parsed.list.length === 0) errors.push("No unlocked achievements with a valid timestamp were found in the pasted text.");
 
     if (errors.length) { latest = {errors: errors}; return; }
 
-    var withDelays = addDelays(parsed);
+    var withDelays = addDelays(parsed.list);
 
     var timeMap = {};
     withDelays.forEach(function (a, i) {
@@ -337,6 +351,7 @@
     var config = buildConfig(appidVal, split.sessions, split.gaps);
 
     var warnings = [];
+    if (parsed.sortedByDate) warnings.push("This paste looks sorted by unlock date, not the game's default order. Achievement numbering needs default order.");
     if (simultaneous.length) warnings.push(simultaneous.length + " timestamp(s) have multiple achievements unlocking together.");
     split.gaps.forEach(function (g, i) {
       if (g <= minGapSec) warnings.push("Session " + (i + 2) + " starts only " + roughDuration(g) + " after the previous one (below your min gap).");
@@ -373,6 +388,7 @@
       },
       stats: {
         achievements: config.achievements.length,
+        totalAchievements: parsed.totalCount,
         sessions: split.sessions.length,
         sessionLen: split.durations.length ? roughDuration(Math.min.apply(null, split.durations)) + " – " + roughDuration(Math.max.apply(null, split.durations)) : "—",
         gapRange: split.gaps.length ? roughDuration(Math.min.apply(null, split.gaps)) + " – " + roughDuration(Math.max.apply(null, split.gaps)) : "—"
@@ -399,7 +415,7 @@
     if (ok) {
       els.statsStrip.style.display = "flex";
       els.statsStrip.innerHTML =
-        "<span><b>" + latest.stats.achievements + "</b> achievements</span>" +
+        "<span><b>" + latest.stats.achievements + " / " + latest.stats.totalAchievements + "</b> achievements</span>" +
         "<span><b>" + latest.stats.sessions + "</b> sessions</span>" +
         "<span>len <b>" + latest.stats.sessionLen + "</b></span>" +
         "<span>gap <b>" + latest.stats.gapRange + "</b></span>";
@@ -441,17 +457,27 @@
     debounceTimer = setTimeout(function () { recompute(); render(); }, 300);
   }
 
+  function resetSettingFields() {
+    els.appid.value = "";
+    els.gameName.value = "";
+    els.gapLimit.value = "3";
+    els.cumLimit.value = "6";
+    els.minGap.value = "1";
+  }
+
+  // Pasting a different game's export shouldn't carry over the previous
+  // game's appid/name/timing settings, so reset them the moment the export
+  // text changes. Registered before the scheduleRecompute loop below so it
+  // runs first and scheduleRecompute's saveDraft() sees the reset values.
+  els.exportText.addEventListener("input", resetSettingFields);
+
   [els.exportText, els.appid, els.gameName, els.gapLimit, els.cumLimit, els.minGap].forEach(function (el) {
     el.addEventListener("input", scheduleRecompute);
   });
 
   els.resetBtn.addEventListener("click", function () {
     els.exportText.value = "";
-    els.appid.value = "";
-    els.gameName.value = "";
-    els.gapLimit.value = "2";
-    els.cumLimit.value = "5";
-    els.minGap.value = "1";
+    resetSettingFields();
     try { localStorage.removeItem("unlock-scheduler-draft"); } catch (e) {}
     recompute();
     render();

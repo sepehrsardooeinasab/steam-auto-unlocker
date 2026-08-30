@@ -1,7 +1,7 @@
 import time
 from datetime import datetime, timedelta
 
-from unlocker.api import API_URL, send_command, send_aset
+from unlocker.api import API_URL, send_command, send_aset, send_alist
 from unlocker.state import (
     DEFAULT_PROGRESS,
     profile_paths,
@@ -20,13 +20,9 @@ def run(game_name=None):
 
     progress = load_progress(progress_path)
 
-    is_first_run = False
     if progress["appid"] != 0 and progress["appid"] != appid:
         print(f"New game detected (was {progress['appid']}, now {appid}). Resetting progress.")
         progress = dict(DEFAULT_PROGRESS)
-        is_first_run = True
-    elif progress["last_completed"] == -1:
-        is_first_run = True
 
     if progress["session_ends_at"] is not None:
         session_start = datetime.fromisoformat(progress["session_ends_at"])
@@ -43,6 +39,13 @@ def run(game_name=None):
     if start_from >= len(achievements):
         print("All achievements already completed.")
         cleanup_profile(config_path, progress_path)
+        return
+
+    # Real unlock state from Steam, independent of the config's ordering, so
+    # achievements already unlocked (in any order) never trigger a wait.
+    unlocked = send_alist(appid)
+    if unlocked is None:
+        print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL} — is it running?")
         return
 
     send_command(f"play {appid}")
@@ -69,50 +72,34 @@ def run(game_name=None):
         save_progress(progress_path, progress)
         return False
 
+    # On a brand new profile, the first achievement that isn't already
+    # unlocked has no real "previous unlock" to pace a delay from — the
+    # achievements skipped ahead of it were pre-existing, not just paced by
+    # us, so fire it immediately instead of waiting out its configured gap.
+    awaiting_first_unlock = progress["last_completed"] == -1
+
     i = start_from
-
-    # First run: catch up on achievements already unlocked (e.g. from before
-    # this tool was used) with no delay, stopping at the first one that
-    # actually needed to be set.
-    if is_first_run:
-        while i < len(achievements):
-            ach = achievements[i]
-            status, result = send_aset(appid, ach["id"])
-
-            if status == "already_unlocked":
-                print(f"Already unlocked, skipping: {ach['id']}")
-                if advance(i, datetime.now()):
-                    return
-                i += 1
-                continue
-
-            if status == "unreachable":
-                print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL} — is it running?")
-                return
-
-            if status == "unknown":
-                print(f"ERROR: unexpected response for {ach['id']}: {result}")
-                return
-
-            print(f"Unlocked: {ach['id']} at [{datetime.now():%H:%M:%S}]")
-            if advance(i, datetime.now()):
-                return
-            i += 1
-            break
-
-        if i >= len(achievements):
-            print("All achievements already unlocked.")
-            cleanup_profile(config_path, progress_path)
-            return
 
     while i < len(achievements):
         ach = achievements[i]
 
-        remaining_delay = ach["delay"]
-        if progress["next_unlock_at"] is not None:
-            unlock_at = datetime.fromisoformat(progress["next_unlock_at"])
-            remaining_delay = max(0, int((unlock_at - datetime.now()).total_seconds()))
-            progress["next_unlock_at"] = None
+        if unlocked.get(ach["id"], False):
+            print(f"Already unlocked, skipping: {ach['id']}")
+            progress["last_completed"] = i
+            progress["appid"] = appid
+            save_progress(progress_path, progress)
+            i += 1
+            continue
+
+        if awaiting_first_unlock:
+            remaining_delay = 0
+        else:
+            remaining_delay = ach["delay"]
+            if progress["next_unlock_at"] is not None:
+                unlock_at = datetime.fromisoformat(progress["next_unlock_at"])
+                remaining_delay = max(0, int((unlock_at - datetime.now()).total_seconds()))
+                progress["next_unlock_at"] = None
+        awaiting_first_unlock = False
 
         if remaining_delay > 0:
             print(f"Waiting {remaining_delay}s before unlocking: {ach['id']}...")

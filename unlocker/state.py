@@ -2,7 +2,7 @@ import sys
 import json
 from pathlib import Path
 
-JSONS_DIR = Path("jsons")
+JSONS_DIR = Path(__file__).resolve().parent.parent / "jsons"
 
 DEFAULT_PROGRESS = {
     "appid": 0,
