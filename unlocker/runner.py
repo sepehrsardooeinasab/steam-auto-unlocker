@@ -11,7 +11,40 @@ from unlocker.state import (
     cleanup_profile)
 
 
-def run(game_name=None):
+def _estimate_session(achievements, start_from, unlocked, first_run):
+    """Returns (end_index, total_seconds) for the session starting at
+    start_from: every achievement up to (not including) the next one that
+    starts a new session, or the end of the list. Mirrors the real loop's
+    skip/first-unlock rules so the estimate matches what will actually run."""
+    end = start_from + 1
+    while end < len(achievements) and not achievements[end]["new_session"]:
+        end += 1
+
+    total = 0
+    skipped_first = not first_run
+    for i in range(start_from, end):
+        ach = achievements[i]
+        if unlocked.get(ach["id"], False):
+            continue
+        if not skipped_first:
+            skipped_first = True
+            continue
+        total += ach["delay"]
+
+    return end, total
+
+
+def _format_duration(seconds):
+    hours, rem = divmod(int(seconds), 3600)
+    minutes = rem // 60
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m"
+    return f"{int(seconds)}s"
+
+
+def run(game_name=None, force=False):
     config_path, progress_path = profile_paths(game_name)
 
     config = load_config(config_path)
@@ -48,6 +81,19 @@ def run(game_name=None):
         print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL} — is it running?")
         return
 
+    awaiting_first_unlock = progress["last_completed"] == -1
+
+    if not force:
+        session_end, session_seconds = _estimate_session(achievements, start_from, unlocked, awaiting_first_unlock)
+        count = session_end - start_from
+        answer = input(
+            f"This session will take ~{_format_duration(session_seconds)} "
+            f"({count} achievement{'s' if count != 1 else ''}). Continue? [y/N] "
+        ).strip().lower()
+        if answer != "y":
+            print("Cancelled.")
+            return
+
     send_command(f"play {appid}")
 
     def advance(i, issued_at):
@@ -72,11 +118,10 @@ def run(game_name=None):
         save_progress(progress_path, progress)
         return False
 
-    # On a brand new profile, the first achievement that isn't already
-    # unlocked has no real "previous unlock" to pace a delay from — the
-    # achievements skipped ahead of it were pre-existing, not just paced by
-    # us, so fire it immediately instead of waiting out its configured gap.
-    awaiting_first_unlock = progress["last_completed"] == -1
+    # awaiting_first_unlock (set above): on a brand new profile, the first
+    # achievement that isn't already unlocked has no real "previous unlock"
+    # to pace a delay from, so it fires immediately instead of waiting out
+    # its configured gap.
 
     i = start_from
 

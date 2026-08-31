@@ -28,5 +28,9 @@ def choose_game_name():
 
 
 if __name__ == "__main__":
-    game_name = sys.argv[1] if len(sys.argv) > 1 else choose_game_name()
-    run(game_name)
+    args = sys.argv[1:]
+    force = "-f" in args or "--force" in args
+    positional = [a for a in args if a not in ("-f", "--force")]
+
+    game_name = positional[0] if positional else choose_game_name()
+    run(game_name, force=force)
