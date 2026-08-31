@@ -21,7 +21,7 @@ Paces out Steam achievement unlocks for a game through [ArchiSteamFarm](https://
 - Create a bot following ASF's own setup instructions. ASF supports running multiple bots, but this project only assumes a single one (`bot1`) — unlocking achievements on your own account doesn't need more.
 - For steadier performance, tweak the configs:
   - In the bot's config (`archifarm/config/bot1.json`), set `"FarmingPreferences": 1` to disable card farming.
-  - In `archifarm/config/ASF.json`, set `"AutoRestart": false` to stop ASF from auto-restarting.
+  - In `archifarm/config/ASF.json`, set `"AutoRestart": false` to stop ASF from auto-restarting, and `"Headless": true` so it never blocks on an interactive prompt when `runsteamunlocker` starts it in the background.
 
 ### 2. Generate a config from SteamHunters
 
