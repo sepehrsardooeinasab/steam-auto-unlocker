@@ -10,9 +10,12 @@ ASF_LOG="$ASF_DIR/log.txt"
 
 show_help() {
     cat <<'EOF'
-Usage: runsteamunlocker [<config-name> | -h | -a | -c | -j]
+Usage: runsteamunlocker [-f] <config-name>
+       runsteamunlocker [-h | -a | -c | -j]
 
   <config-name>   Run the unlocker using jsons/config_<config-name>.json.
+                  Shows the upcoming session's length and asks to confirm.
+  -f, --force     Same as above, but skip the confirmation prompt.
   -h, --help      Show this help.
   -a              List available jsons/config_*.json profiles.
   -c              Open the project in VS Code.
@@ -39,6 +42,12 @@ ensure_asf_running() {
     (cd "$ASF_DIR" && nohup "$ASF_BINARY" >> "$ASF_LOG" 2>&1 &)
     sleep 5
 }
+
+force=0
+if [ "${1-}" = "-f" ] || [ "${1-}" = "--force" ]; then
+    force=1
+    shift
+fi
 
 if [ "$#" -gt 1 ]; then
     echo "Unexpected extra argument(s): ${*:2}" >&2
@@ -76,6 +85,10 @@ case "${1-}" in
             exit 1
         fi
         ensure_asf_running
-        exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "$name"
+        if [ "$force" -eq 1 ]; then
+            exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "$name" --force
+        else
+            exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "$name"
+        fi
         ;;
 esac
