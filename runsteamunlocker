@@ -11,11 +11,12 @@ ASF_LOG="$ASF_DIR/log.txt"
 show_help() {
     cat <<'EOF'
 Usage: runsteamunlocker [-f] <config-name>
-       runsteamunlocker [-h | -a | -c | -j]
+       runsteamunlocker [-h | -a | -c | -j | -k]
 
   <config-name>   Run the unlocker using jsons/config_<config-name>.json.
                   Shows the upcoming session's length and asks to confirm.
   -f, --force     Same as above, but skip the confirmation prompt.
+  -k, --kill      Stop ArchiSteamFarm and any running unlocker session.
   -h, --help      Show this help.
   -a              List available jsons/config_*.json profiles.
   -c              Open the project in VS Code.
@@ -41,6 +42,23 @@ ensure_asf_running() {
     echo "ArchiSteamFarm isn't running, starting it..."
     (cd "$ASF_DIR" && nohup "$ASF_BINARY" >> "$ASF_LOG" 2>&1 &)
     sleep 5
+}
+
+kill_all() {
+    local found=0
+    if pgrep -f "$ASF_BINARY" > /dev/null 2>&1; then
+        echo "Stopping ArchiSteamFarm..."
+        pkill -f "$ASF_BINARY"
+        found=1
+    fi
+    if pgrep -f "$PROJECT_DIR/unlocker/run_unlocker.py" > /dev/null 2>&1; then
+        echo "Stopping running unlocker session..."
+        pkill -f "$PROJECT_DIR/unlocker/run_unlocker.py"
+        found=1
+    fi
+    if [ "$found" -eq 0 ]; then
+        echo "Nothing running."
+    fi
 }
 
 force=0
@@ -70,6 +88,9 @@ case "${1-}" in
         ;;
     -j)
         open "$PROJECT_DIR/docs/index.html"
+        ;;
+    -k|--kill)
+        kill_all
         ;;
     -*)
         echo "Unknown option: $1" >&2
