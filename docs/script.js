@@ -185,8 +185,14 @@
     return rows;
   }
 
-  // Renders the same row data as an HTML table for on-screen preview. The
-  // CSV file itself (built via toCsv() from these same rows) is untouched.
+  // A gap-marker row (all cells blank except the trailing gap duration),
+  // inserted between sessions in buildSessionsRows purely so the on-screen
+  // table can show a "— gap until next session —" separator. Filtered back
+  // out before the same row data is turned into the actual downloaded CSV.
+  function isGapRow(row) {
+    return row.slice(0, -1).every(function (c) { return c === ""; }) && row[row.length - 1] !== "";
+  }
+
   function rowsToTable(rows) {
     var head = rows[0];
     var body = rows.slice(1);
@@ -194,8 +200,7 @@
     head.forEach(function (h) { html += "<th>" + escapeHtml(h) + "</th>"; });
     html += "</tr></thead><tbody>";
     body.forEach(function (r) {
-      var isGapRow = r.slice(0, -1).every(function (c) { return c === ""; }) && r[r.length - 1] !== "";
-      if (isGapRow) {
+      if (isGapRow(r)) {
         html += '<tr class="gap-row"><td colspan="' + head.length + '">— ' + escapeHtml(r[r.length - 1]) + " gap until next session —</td></tr>";
       } else {
         html += "<tr>" + r.map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") + "</tr>";
@@ -372,7 +377,7 @@
       jsonText: JSON.stringify(config, null, 2),
       csv: {
         merged: toCsv(mergedRows),
-        sessions: toCsv(sessionsRows),
+        sessions: toCsv([sessionsRows[0]].concat(sessionsRows.slice(1).filter(function (r) { return !isGapRow(r); }))),
         summary: toCsv(summaryRows)
       },
       rows: {
