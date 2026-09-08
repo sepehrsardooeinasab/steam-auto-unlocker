@@ -2,9 +2,32 @@ import json
 import re
 import subprocess
 import time
+from pathlib import Path
 
 API_URL = "http://127.0.0.1:1242/Api/Command"
 BOT_CONNECT_TIMEOUT = 60
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ASF_DIR = PROJECT_ROOT / "archifarm"
+ASF_BINARY = ASF_DIR / "ArchiSteamFarm"
+ASF_LOG = ASF_DIR / "log.txt"
+
+
+def ensure_asf_running():
+    """Starts ArchiSteamFarm if it isn't already running, and waits a bit
+    for it to come up. Mirrors runsteamunlocker's own bash version, but now
+    called from here so it only runs after the user has actually confirmed
+    they want to proceed, not unconditionally before asking."""
+    if subprocess.run(["pgrep", "-f", str(ASF_BINARY)], capture_output=True).returncode == 0:
+        return
+
+    print("ArchiSteamFarm isn't running, starting it...")
+    with open(ASF_LOG, "a") as log:
+        subprocess.Popen(
+            [str(ASF_BINARY)], cwd=str(ASF_DIR),
+            stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+            start_new_session=True)
+    time.sleep(5)
 
 
 def send_command(command):
