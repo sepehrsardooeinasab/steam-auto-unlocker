@@ -6,16 +6,18 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JSONS_DIR="$PROJECT_DIR/jsons"
 ASF_DIR="$PROJECT_DIR/archifarm"
 ASF_BINARY="$ASF_DIR/ArchiSteamFarm"
-ASF_LOG="$ASF_DIR/log.txt"
 
 show_help() {
     cat <<'EOF'
 Usage: runsteamunlocker [-f] <config-name>
+       runsteamunlocker -t <config-name>
        runsteamunlocker [-h | -a | -c | -j | -k]
 
   <config-name>   Run the unlocker using jsons/config_<config-name>.json.
                   Shows the upcoming session's length and asks to confirm.
   -f, --force     Same as above, but skip the confirmation prompt.
+  -t, --time      Print "<wait_seconds> <duration_seconds>" for the next
+                  session and exit, without running or touching ASF.
   -k, --kill      Stop ArchiSteamFarm and any running unlocker session.
   -h, --help      Show this help.
   -a              List available jsons/config_*.json profiles.
@@ -33,15 +35,6 @@ list_configs() {
         name="${name%.json}"
         echo "$name"
     done
-}
-
-ensure_asf_running() {
-    if pgrep -f "$ASF_BINARY" > /dev/null 2>&1; then
-        return
-    fi
-    echo "ArchiSteamFarm isn't running, starting it..."
-    (cd "$ASF_DIR" && nohup "$ASF_BINARY" >> "$ASF_LOG" 2>&1 &)
-    sleep 5
 }
 
 kill_all() {
@@ -62,8 +55,12 @@ kill_all() {
 }
 
 force=0
+time_only=0
 if [ "${1-}" = "-f" ] || [ "${1-}" = "--force" ]; then
     force=1
+    shift
+elif [ "${1-}" = "-t" ] || [ "${1-}" = "--time" ]; then
+    time_only=1
     shift
 fi
 
@@ -105,8 +102,9 @@ case "${1-}" in
             echo "Available: $(list_configs | tr '\n' ' ')" >&2
             exit 1
         fi
-        ensure_asf_running
-        if [ "$force" -eq 1 ]; then
+        if [ "$time_only" -eq 1 ]; then
+            exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "$name" --time
+        elif [ "$force" -eq 1 ]; then
             exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "$name" --force
         else
             exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "$name"
