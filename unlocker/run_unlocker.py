@@ -30,7 +30,8 @@ def choose_game_name():
 if __name__ == "__main__":
     args = sys.argv[1:]
     force = "-f" in args or "--force" in args
-    positional = [a for a in args if a not in ("-f", "--force")]
+    time_only = "-t" in args or "--time" in args
+    positional = [a for a in args if a not in ("-f", "--force", "-t", "--time")]
 
     game_name = positional[0] if positional else choose_game_name()
-    run(game_name, force=force)
+    run(game_name, force=force, time_only=time_only)

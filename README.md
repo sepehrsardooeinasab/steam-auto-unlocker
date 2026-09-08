@@ -63,6 +63,7 @@ Put these lines in `~/.zshrc` — or, if you use oh-my-zsh, in a file under `~/.
 
 ```sh
 runsteamunlocker <config-name>   # run the unlocker using jsons/config_<config-name>.json
+runsteamunlocker -t <config-name> # print the next session's wait/duration and exit, without running
 runsteamunlocker -h              # help
 ```
 

@@ -3,7 +3,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-from unlocker.api import API_URL, send_command, send_aset, send_alist
+from unlocker.api import API_URL, send_command, send_aset, send_alist, ensure_asf_running
 from unlocker.state import (
     DEFAULT_PROGRESS,
     profile_paths,
@@ -34,15 +34,25 @@ def _schedule_asf_shutdown(delay_seconds=ASF_SHUTDOWN_DELAY):
     child_code = f"""
 import json, subprocess, time
 
-def cmd(c):
+def request(c):
     p = subprocess.run(
         ["curl", "-s", "-X", "POST", {API_URL!r},
          "-H", "Content-Type: application/json", "-d", json.dumps({{"Command": c}})],
         capture_output=True, text=True, timeout=30)
-    try:
-        return json.loads(p.stdout).get("Result", "")
-    except Exception:
-        return ""
+    return json.loads(p.stdout).get("Result", "")
+
+def cmd(c, attempts=5, retry_delay=5):
+    # A blip (e.g. Steam reconnecting) can make a single check fail;
+    # retry the request itself a few times before giving up, so a
+    # transient hiccup doesn't get treated as "still busy" and strand
+    # ASF (and its Steam session) running forever.
+    for attempt in range(attempts):
+        try:
+            return request(c)
+        except Exception:
+            if attempt == attempts - 1:
+                return ""
+            time.sleep(retry_delay)
 
 time.sleep({delay_seconds})
 if "not farming anything" in cmd("status").lower():
@@ -101,7 +111,7 @@ def _format_duration(seconds):
     return f"{int(seconds)}s"
 
 
-def run(game_name=None, force=False):
+def run(game_name=None, force=False, time_only=False):
     config_path, progress_path = profile_paths(game_name)
 
     config = load_config(config_path)
@@ -111,40 +121,75 @@ def run(game_name=None, force=False):
     progress = load_progress(progress_path)
 
     if progress["appid"] != 0 and progress["appid"] != appid:
-        print(f"New game detected (was {progress['appid']}, now {appid}). Resetting progress.")
+        if not time_only:
+            print(f"New game detected (was {progress['appid']}, now {appid}). Resetting progress.")
         progress = dict(DEFAULT_PROGRESS)
+
+    start_from = progress["last_completed"] + 1
+    if start_from >= len(achievements):
+        if time_only:
+            print("0 0")
+            return
+        print("All achievements already completed.")
+        cleanup_profile(config_path, progress_path)
+        return
+
+
+    # Cheap, ASF-independent estimate from the config alone, so the user can
+    # decide whether to bother connecting at all before we touch ASF. The
+    # count/duration part doesn't depend on next_unlock_at, so it's safe to
+    # compute before the session_ends_at cooldown check/reset below.
+    session_bounds = _session_bounds(achievements)
+    session_index = next(idx for idx, (s, e) in enumerate(session_bounds) if s <= start_from < e)
+    session_end_i, _, est_duration = _estimate_session(
+        achievements, start_from, {}, progress, progress["last_completed"] == -1)
+    count = session_end_i - start_from
+    session_line = (
+        f"Session {session_index + 1}/{len(session_bounds)} "
+        f"~{_format_duration(est_duration)} "
+        f"({count} achievement{'s' if count != 1 else ''})."
+    )
+
 
     if progress["session_ends_at"] is not None:
         session_start = datetime.fromisoformat(progress["session_ends_at"])
         if datetime.now() < session_start:
             remaining = session_start - datetime.now()
+            if time_only:
+                print(f"{int(remaining.total_seconds())} {est_duration}")
+                return
             hours, rem = divmod(int(remaining.total_seconds()), 3600)
             minutes = rem // 60
             print(f"Session can be run after {hours}h {minutes}m (at {session_start:%H:%M}).")
+            print(session_line)
             return
         progress["session_ends_at"] = None
         progress["next_unlock_at"] = datetime.now().isoformat()
 
-    start_from = progress["last_completed"] + 1
-    if start_from >= len(achievements):
-        print("All achievements already completed.")
-        cleanup_profile(config_path, progress_path)
+    _, est_wait, _ = _estimate_session(
+        achievements, start_from, {}, progress, progress["last_completed"] == -1)
+
+    if time_only:
+        print(f"{est_wait} {est_duration}")
         return
 
-    # Cheap, ASF-independent estimate from the config alone, so the user can
-    # decide whether to bother connecting at all before we touch ASF.
-    if not force:
-        session_bounds = _session_bounds(achievements)
-        session_index = next(idx for idx, (s, e) in enumerate(session_bounds) if s <= start_from < e)
-        _, session_end_i = session_bounds[session_index]
-        raw_duration = sum(achievements[i]["delay"] for i in range(start_from, session_end_i))
-        answer = input(
-            f"Session {session_index + 1}/{len(session_bounds)} "
-            f"~{_format_duration(raw_duration)}. Continue? [y/N] "
-        ).strip().lower()
+    if est_wait > 0:
+        run_at = datetime.now() + timedelta(seconds=est_wait)
+        print(f"Session can be run in {_format_duration(est_wait)} (at {run_at:%H:%M}).")
+    else:
+        print("Session can be run now.")
+
+    if force:
+        print(session_line)
+    else:
+        answer = input(f"{session_line} Continue? [y/N] ").strip().lower()
         if answer != "y":
             print("Cancelled.")
             return
+
+    # Only touch ASF once the user has actually committed to running —
+    # not before, so declining the prompt above never starts it up.
+    ensure_asf_running()
 
     # Real unlock state from Steam, independent of the config's ordering, so
     # achievements already unlocked (in any order) never trigger a wait.
@@ -161,9 +206,14 @@ def run(game_name=None, force=False):
         run_at = datetime.now() + timedelta(seconds=wait_seconds)
         print(f"Session can be run in {_format_duration(wait_seconds)} (at {run_at:%H:%M}).")
     else:
-        print("Session can be run now.")
+        print("Bot is now connected to Steam.")
 
     send_command(f"play {appid}")
+    # Give Steam a moment to actually register the game as running before
+    # the first aset — the first achievement of a session otherwise fires
+    # with zero delay, right on top of "play", and unlocks with an epoch
+    # (offline-looking) timestamp instead of a real one.
+    time.sleep(10)
 
     def advance(i, issued_at):
         """Record achievement i as done and schedule (or end) what's next."""
