@@ -26,6 +26,14 @@ Usage: runsteamunlocker [-f] <config-name>
 EOF
 }
 
+open_file() {
+    if [ "$(uname -s)" = "Darwin" ]; then
+        open "$1"
+    else
+        xdg-open "$1"
+    fi
+}
+
 list_configs() {
     local f name
     for f in "$JSONS_DIR"/config_*.json; do
@@ -84,7 +92,7 @@ case "${1-}" in
         code "$PROJECT_DIR"
         ;;
     -j)
-        open "$PROJECT_DIR/docs/index.html"
+        open_file "$PROJECT_DIR/docs/index.html"
         ;;
     -k|--kill)
         kill_all

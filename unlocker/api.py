@@ -1,6 +1,7 @@
 import json
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -28,6 +29,18 @@ def ensure_asf_running():
             stdin=subprocess.DEVNULL, stdout=log, stderr=log,
             start_new_session=True)
     time.sleep(5)
+
+
+def schedule_asf_kill(delay_seconds=60):
+    """Detached background timer: force-kills ArchiSteamFarm (same as
+    runsteamunlocker's own `pkill -f`) after delay_seconds, regardless of
+    whether its API is reachable. Used after an unlock fails outright, so a
+    stuck or unreachable bot doesn't stay connected to Steam indefinitely."""
+    subprocess.Popen(
+        [sys.executable, "-c",
+         f"import time, subprocess; time.sleep({delay_seconds}); "
+         f"subprocess.run(['pkill', '-f', {str(ASF_BINARY)!r}])"],
+        start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def send_command(command):

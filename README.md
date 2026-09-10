@@ -2,6 +2,8 @@
 
 Paces out Steam achievement unlocks for a game through [ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm) (ASF), spreading them across realistic delays and sessions instead of firing them all at once.
 
+Runs on macOS and Linux (not Windows).
+
 **[Unlock Scheduler](https://sepehrsardooeinasab.github.io/steam-auto-unlocker/)** — paste a SteamHunters achievement export in the browser and it generates a delay/session config for you.
 
 ## How it works
@@ -20,7 +22,7 @@ Paces out Steam achievement unlocks for a game through [ArchiSteamFarm](https://
 - Download [ASFAchievementManager](https://github.com/CatPoweredPlugins/ASFAchievementManager) and drop it into ASF's `plugins/` folder.
 - Create a bot following ASF's own setup instructions. ASF supports running multiple bots, but this project only assumes a single one (`bot1`) — unlocking achievements on your own account doesn't need more.
 - For steadier performance, tweak the configs:
-  - In the bot's config (`archifarm/config/bot1.json`), set `"FarmingPreferences": 1` to disable card farming.
+  - In the bot's config (`archifarm/config/bot1.json`), set `"FarmingEnabled": false` to stop card farming.
   - In `archifarm/config/ASF.json`, set `"AutoRestart": false` to stop ASF from auto-restarting, and `"Headless": true` so it never blocks on an interactive prompt when `runsteamunlocker` starts it in the background.
 
 ### 2. Generate a config from SteamHunters
@@ -62,9 +64,14 @@ Put these lines in `~/.zshrc` — or, if you use oh-my-zsh, in a file under `~/.
 ## Usage
 
 ```sh
-runsteamunlocker <config-name>   # run the unlocker using jsons/config_<config-name>.json
-runsteamunlocker -t <config-name> # print the next session's wait/duration and exit, without running
-runsteamunlocker -h              # help
+runsteamunlocker <config-name>      # run the unlocker using jsons/config_<config-name>.json
+runsteamunlocker -f <config-name>   # same, but skip the confirmation prompt
+runsteamunlocker -t <config-name>   # print the next session's wait/duration and exit, without running
+runsteamunlocker -k                 # stop ArchiSteamFarm and any running unlocker session
+runsteamunlocker -a                 # list available jsons/config_*.json profiles
+runsteamunlocker -j                 # open the Unlock Scheduler (docs/index.html) in the browser
+runsteamunlocker -c                 # open the project in VS Code
+runsteamunlocker -h                 # help
 ```
 
 ## Disclaimer

@@ -3,7 +3,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-from unlocker.api import API_URL, send_command, send_aset, send_alist, ensure_asf_running
+from unlocker.api import API_URL, send_command, send_aset, send_alist, ensure_asf_running, schedule_asf_kill
 from unlocker.state import (
     DEFAULT_PROGRESS,
     profile_paths,
@@ -277,12 +277,18 @@ def run(game_name=None, force=False, time_only=False):
             print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL} — is it running?")
             progress["next_unlock_at"] = datetime.now().isoformat()
             save_progress(progress_path, progress)
+            # "play" was already sent above, so leaving ASF running here
+            # would strand the bot stuck "playing" this game indefinitely.
+            # The API isn't reachable, so there's no graceful way to tell it
+            # to resume/exit — force-kill it directly instead.
+            schedule_asf_kill()
             return
 
         if status == "unknown":
             print(f"ERROR: unexpected response for {ach['id']}: {result}")
             progress["next_unlock_at"] = datetime.now().isoformat()
             save_progress(progress_path, progress)
+            schedule_asf_kill()
             return
 
         if status == "already_unlocked":
