@@ -21,6 +21,17 @@ Runs on macOS and Linux (not Windows).
 - Download and set up [ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm).
 - Download [ASFAchievementManager](https://github.com/CatPoweredPlugins/ASFAchievementManager) and drop it into ASF's `plugins/` folder.
 - Create a bot following ASF's own setup instructions. ASF supports running multiple bots, but this project only assumes a single one (`bot1`) — unlocking achievements on your own account doesn't need more.
+- **Required:** create `archifarm/config/IPC.config` so ASF's local API listens on port `1243` — the port `unlocker/api.py` talks to, not ASF's default `1242`. This keeps it off the default port so it can't collide with any other ASF instance you might run (e.g. one used for card farming); the unlocker won't be able to reach ASF at all without it.
+  ```json
+  {
+      "Kestrel": {
+          "Endpoints": {
+              "HTTP4": { "Url": "http://127.0.0.1:1243" },
+              "HTTP6": { "Url": "http://[::1]:1243" }
+          }
+      }
+  }
+  ```
 - For steadier performance, tweak the configs:
   - In the bot's config (`archifarm/config/bot1.json`), set `"FarmingEnabled": false` to stop card farming.
   - In `archifarm/config/ASF.json`, set `"AutoRestart": false` to stop ASF from auto-restarting, and `"Headless": true` so it never blocks on an interactive prompt when `runsteamunlocker` starts it in the background.
