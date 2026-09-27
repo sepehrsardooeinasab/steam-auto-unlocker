@@ -363,6 +363,7 @@
   }
   .notice.warn { background: var(--warn-bg); color: var(--warn); }
   .notice.danger { background: var(--danger-bg); color: var(--danger); }
+  #input-alert-slot .notice { margin: 0.6rem 0 0; }
   .notice.info { background: var(--info-bg); color: var(--info); }
 
   pre.file-preview {
@@ -449,6 +450,8 @@
 
   .btn-primary { background: var(--box-text); color: var(--box-bg); }
   .btn-primary:hover:not(:disabled) { background: var(--accent-strong); color: #fff; }
+  .btn-primary.btn-danger { background: var(--danger); color: #fff; box-shadow: 0 0 0 3px var(--danger-bg); }
+  .btn-primary.btn-danger:hover:not(:disabled) { background: var(--danger); filter: brightness(0.9); }
 
   .btn-ghost { background: transparent; border-color: var(--box-border); color: var(--box-text-dim); }
   .btn-ghost:hover:not(:disabled) { border-color: var(--box-text-dim); color: var(--box-text); }

@@ -7,6 +7,8 @@
   // ---------------------------------------------------------------
   var MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
   var SKIP_LINE_RE = /^\d+\s+guides?$/i;
+  // "2,944 / 7,212   197   39.8 %" — unlocked / owners, points, percentage.
+  var STATS_RE = /^[\d,]+\s*\/\s*[\d,]+\s+([\d,]+)\s+(\d+(?:\.\d+)?)\s*%$/;
   var TIME_RE = /(\d{1,2})\s+(\w{3})\s+'(\d{2})\s+@\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s+(am|pm)/i;
 
   function groupIntoBlocks(lines) {
@@ -36,6 +38,7 @@
     var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); });
     var blocks = groupIntoBlocks(lines);
     var achievements = [];
+    var entries = []; // every achievement, locked or not, in pasted order
     var totalCount = 0;
 
     blocks.forEach(function (block, bi) {
@@ -48,11 +51,18 @@
       idx++;
       totalCount++;
 
-      var unlockTime = null;
+      var unlockTime = null, points = null, percent = null;
       for (var i = idx; i < block.length; i++) {
+        var s = block[i].match(STATS_RE);
+        if (s && percent === null) {
+          points = parseInt(s[1].replace(/,/g, ""), 10);
+          percent = parseFloat(s[2]);
+          continue;
+        }
         var m = block[i].match(TIME_RE);
         if (m) { unlockTime = parseTimestamp(m); break; }
       }
+      entries.push({name: achName, points: points, percent: percent});
 
       if (unlockTime !== null) {
         achievements.push({ach_name: achName, ach_id: orderIndex, unlock_time: unlockTime});
@@ -61,17 +71,49 @@
 
     // ach_id is the achievement's position as pasted, which must match the
     // game's default/schema order (same order ASF's alist/aset use) for the
-    // generated config to target the right achievements. If the pasted
-    // timestamps already come out non-decreasing, that's a strong sign the
-    // page was sorted by unlock date instead, which would silently scramble
-    // ach_id even though the delay/session math below stays correct either
-    // way (it re-sorts by real timestamp regardless of paste order).
-    var sortedByDate = achievements.length > 1 && achievements.every(function (a, i) {
-      return i === 0 || a.unlock_time >= achievements[i - 1].unlock_time;
-    });
+    // generated config to target the right achievements. If the paste comes
+    // out fully ordered (either direction) by one of SteamHunters' other
+    // sort keys, that's a strong sign the page was sorted by it instead,
+    // which would silently scramble ach_id even though the delay/session
+    // math below stays correct either way (it re-sorts by real timestamp
+    // regardless of paste order).
+    var sortedBy = detectSort(achievements, entries);
 
     achievements.sort(function (a, b) { return a.unlock_time - b.unlock_time; });
-    return {list: achievements, sortedByDate: sortedByDate, totalCount: totalCount};
+    return {list: achievements, sortedBy: sortedBy, totalCount: totalCount};
+  }
+
+  var NAME_COLLATOR = new Intl.Collator(undefined, {sensitivity: "base", ignorePunctuation: true, numeric: true});
+
+  // True if values are entirely non-decreasing or entirely non-increasing,
+  // with at least one real change (so an all-equal list doesn't count).
+  // Needs 3+ values: any 2 are trivially "sorted" one way or the other.
+  function isMonotonic(values, cmp) {
+    if (values.length < 3) return false;
+    var asc = true, desc = true, changed = false;
+    for (var i = 1; i < values.length; i++) {
+      var c = cmp(values[i - 1], values[i]);
+      if (c > 0) asc = false;
+      if (c < 0) desc = false;
+      if (c !== 0) changed = true;
+    }
+    return changed && (asc || desc);
+  }
+
+  // Returns the name of the sort key the paste appears ordered by, or null.
+  function detectSort(unlocked, entries) {
+    var byNumber = function (a, b) { return a - b; };
+    var known = function (key) {
+      var vals = entries.map(function (e) { return e[key]; });
+      // Only trust a key if it parsed for every entry.
+      return vals.every(function (v) { return v !== null; }) ? vals : [];
+    };
+
+    if (isMonotonic(unlocked.map(function (a) { return a.unlock_time; }), byNumber)) return "unlock date";
+    if (isMonotonic(entries.map(function (e) { return e.name; }), NAME_COLLATOR.compare)) return "name";
+    if (isMonotonic(known("percent"), byNumber)) return "percentage";
+    if (isMonotonic(known("points"), byNumber)) return "points";
+    return null;
   }
 
   function addDelays(list) {
@@ -245,8 +287,13 @@
     jsonSlot: document.getElementById("json-slot"),
     csvMergedSlot: document.getElementById("csv-merged-slot"),
     csvSessionsSlot: document.getElementById("csv-sessions-slot"),
-    csvSummarySlot: document.getElementById("csv-summary-slot")
+    csvSummarySlot: document.getElementById("csv-summary-slot"),
+    inputAlertSlot: document.getElementById("input-alert-slot")
   };
+
+  function sortedByMsg(key) {
+    return "This paste looks sorted by " + key + ", not the game's default order. Achievement numbering needs default order, so the generated IDs will be wrong. Re-copy the page with the default sort.";
+  }
 
   var NAV_TITLES = {
     input: "Achievements",
@@ -355,8 +402,13 @@
     var split = splitSessions(withDelays, gapLimitSec, cumLimitSec);
     var config = buildConfig(appidVal, split.sessions, split.gaps);
 
+    // Unlike the warnings below, a re-sorted paste makes every ach_id
+    // wrong, so it's surfaced loudly (red Download button, input-pane
+    // notice) rather than only as a notice in the output tabs.
+    var dangers = [];
+    if (parsed.sortedBy) dangers.push(sortedByMsg(parsed.sortedBy));
+
     var warnings = [];
-    if (parsed.sortedByDate) warnings.push("This paste looks sorted by unlock date, not the game's default order. Achievement numbering needs default order.");
     if (simultaneous.length) warnings.push(simultaneous.length + " timestamp(s) have multiple achievements unlocking together.");
     split.gaps.forEach(function (g, i) {
       if (g <= minGapSec) warnings.push("Session " + (i + 2) + " starts only " + roughDuration(g) + " after the previous one (below your min gap).");
@@ -372,6 +424,7 @@
 
     latest = {
       errors: [],
+      dangers: dangers,
       warnings: warnings,
       config: config,
       jsonText: JSON.stringify(config, null, 2),
@@ -432,6 +485,13 @@
     // whether we have valid data at all — not on which tab is open.
     els.downloadBtn.disabled = !ok;
 
+    var dangers = ok ? latest.dangers : [];
+    var dangerHtml = dangers.map(function (d) { return noticeHtml("danger", d); }).join("");
+    els.inputAlertSlot.innerHTML = dangerHtml;
+    els.downloadBtn.classList.toggle("btn-danger", dangers.length > 0);
+    els.downloadBtn.textContent = dangers.length ? "Download anyway" : "Download All";
+    els.downloadBtn.title = dangers.join("\n");
+
     var fileKey = fileKeyForView(currentView);
     if (!fileKey) return;
 
@@ -446,7 +506,7 @@
       return;
     }
 
-    var warningsHtml = latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("");
+    var warningsHtml = dangerHtml + latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("");
 
     if (fileKey === "json") {
       slot.innerHTML = warningsHtml + '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>";

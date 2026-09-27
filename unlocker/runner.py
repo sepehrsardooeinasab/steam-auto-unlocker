@@ -3,7 +3,15 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-from unlocker.api import API_URL, send_command, send_aset, send_alist, ensure_asf_running, schedule_asf_kill
+from unlocker.api import (
+    API_URL,
+    send_command,
+    send_aset,
+    send_alist,
+    ensure_asf_running,
+    schedule_asf_kill,
+    start_caffeinate,
+    stop_caffeinate)
 from unlocker.state import (
     DEFAULT_PROGRESS,
     profile_paths,
@@ -13,6 +21,16 @@ from unlocker.state import (
     cleanup_profile)
 
 ASF_SHUTDOWN_DELAY = 300  # 5 minutes
+WARM_SETTLE_DELAY = 10  # bot was already connected to Steam throughout
+# A 10s buffer after a fresh (re)connect wasn't enough in practice — it
+# still produced an epoch/offline-looking achievement timestamp once — so
+# this one is generously long rather than re-guessing a slightly bigger
+# fixed number.
+RECONNECT_SETTLE_DELAY = 60
+# Unlocks this close together in the source data count as simultaneous (a
+# 1s delay is usually the same event straddling a second boundary), and are
+# batched into a single aset. Anything longer gets its own aset.
+SIMULTANEOUS_MAX_DELAY = 1
 
 
 def _session_bounds(achievements):
@@ -63,40 +81,32 @@ if "not farming anything" in cmd("status").lower():
         start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def _estimate_session(achievements, start_from, unlocked, progress, first_run):
+def _estimate_session(achievements, start_from, progress, first_run):
     """Returns (end_index, wait_seconds, duration_seconds) for the session
     starting at start_from: every achievement up to (not including) the next
     one that starts a new session, or the end of the list.
 
-    wait_seconds is how long until the first real (not-already-unlocked)
-    achievement can fire — mirrors the real loop's delay rule for it exactly,
-    including the first-run/just-resumed-from-cooldown "fires immediately"
-    cases. duration_seconds is the configured delay for every real
-    achievement after that one, i.e. the active time once the session has
-    actually started."""
+    Every achievement in the session is waited out in order regardless of
+    whether it turns out to already be unlocked — only whether an aset is
+    actually sent depends on that — so this is purely positional. wait_seconds
+    is how long until achievements[start_from] can fire — mirrors the real
+    loop's delay rule for it exactly, including the first-run/just-resumed-
+    from-cooldown "fires immediately" cases. duration_seconds is the
+    configured delay for every achievement after that one, i.e. the active
+    time once the session has actually started."""
     end = start_from + 1
     while end < len(achievements) and not achievements[end]["new_session"]:
         end += 1
 
-    wait = 0
-    duration = 0
-    is_first_real = True
-    for i in range(start_from, end):
-        ach = achievements[i]
-        if unlocked.get(ach["id"], False):
-            continue
+    if first_run:
+        wait = 0
+    elif progress["next_unlock_at"] is not None:
+        unlock_at = datetime.fromisoformat(progress["next_unlock_at"])
+        wait = max(0, int((unlock_at - datetime.now()).total_seconds()))
+    else:
+        wait = achievements[start_from]["delay"]
 
-        if is_first_real:
-            is_first_real = False
-            if first_run:
-                wait = 0
-            elif progress["next_unlock_at"] is not None:
-                unlock_at = datetime.fromisoformat(progress["next_unlock_at"])
-                wait = max(0, int((unlock_at - datetime.now()).total_seconds()))
-            else:
-                wait = ach["delay"]
-        else:
-            duration += ach["delay"]
+    duration = sum(achievements[i]["delay"] for i in range(start_from + 1, end))
 
     return end, wait, duration
 
@@ -142,7 +152,7 @@ def run(game_name=None, force=False, time_only=False):
     session_bounds = _session_bounds(achievements)
     session_index = next(idx for idx, (s, e) in enumerate(session_bounds) if s <= start_from < e)
     session_end_i, _, est_duration = _estimate_session(
-        achievements, start_from, {}, progress, progress["last_completed"] == -1)
+        achievements, start_from, progress, progress["last_completed"] == -1)
     count = session_end_i - start_from
     session_line = (
         f"Session {session_index + 1}/{len(session_bounds)} "
@@ -167,7 +177,7 @@ def run(game_name=None, force=False, time_only=False):
         progress["next_unlock_at"] = datetime.now().isoformat()
 
     _, est_wait, _ = _estimate_session(
-        achievements, start_from, {}, progress, progress["last_completed"] == -1)
+        achievements, start_from, progress, progress["last_completed"] == -1)
 
     if time_only:
         print(f"{est_wait} {est_duration}")
@@ -189,118 +199,148 @@ def run(game_name=None, force=False, time_only=False):
 
     # Only touch ASF once the user has actually committed to running —
     # not before, so declining the prompt above never starts it up.
-    ensure_asf_running()
+    caffeinate_proc = start_caffeinate()
+    if caffeinate_proc is not None:
+        print(f"Caffeinate activated for {_format_duration(est_wait + est_duration)}.")
 
-    # Real unlock state from Steam, independent of the config's ordering, so
-    # achievements already unlocked (in any order) never trigger a wait.
-    unlocked = send_alist(appid)
-    if unlocked is None:
-        print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL}")
-        return
+    try:
+        ensure_asf_running()
 
-    awaiting_first_unlock = progress["last_completed"] == -1
-    _, wait_seconds, _ = _estimate_session(
-        achievements, start_from, unlocked, progress, awaiting_first_unlock)
+        # Real unlock state from Steam, independent of the config's ordering, so
+        # achievements already unlocked (in any order) never trigger a wait.
+        unlocked, reconnected = send_alist(appid)
+        if unlocked is None:
+            print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL}")
+            # ensure_asf_running() may have just started it — don't leave
+            # that process orphaned and running for the next session to
+            # trip over.
+            schedule_asf_kill()
+            return
 
-    if wait_seconds > 0:
-        run_at = datetime.now() + timedelta(seconds=wait_seconds)
-        print(f"Session can be run in {_format_duration(wait_seconds)} (at {run_at:%H:%M}).")
-    else:
-        print("Bot is now connected to Steam.")
+        awaiting_first_unlock = progress["last_completed"] == -1
+        _, wait_seconds, _ = _estimate_session(
+            achievements, start_from, progress, awaiting_first_unlock)
 
-    send_command(f"play {appid}")
-    # Give Steam a moment to actually register the game as running before
-    # the first aset — the first achievement of a session otherwise fires
-    # with zero delay, right on top of "play", and unlocks with an epoch
-    # (offline-looking) timestamp instead of a real one.
-    time.sleep(10)
-
-    def advance(i, issued_at):
-        """Record achievement i as done and schedule (or end) what's next."""
-        progress["last_completed"] = i
-        progress["appid"] = appid
-
-        next_i = i + 1
-        if next_i < len(achievements) and achievements[next_i]["new_session"]:
-            gap = achievements[next_i]["delay"]
-            progress["next_unlock_at"] = None
-            progress["session_ends_at"] = (datetime.now() + timedelta(seconds=gap)).isoformat()
-            save_progress(progress_path, progress)
-            send_command("resume")
-            _schedule_asf_shutdown()
-            print(f"Session complete. Next session in {gap // 3600}h {(gap % 3600) // 60}m.")
-            return True  # stop the script
-        elif next_i < len(achievements):
-            progress["next_unlock_at"] = (issued_at + timedelta(seconds=achievements[next_i]["delay"])).isoformat()
+        if wait_seconds > 0:
+            run_at = datetime.now() + timedelta(seconds=wait_seconds)
+            print(f"Session can be run in {_format_duration(wait_seconds)} (at {run_at:%H:%M}).")
         else:
-            progress["next_unlock_at"] = None
+            print("Bot is now connected to Steam.")
 
-        save_progress(progress_path, progress)
-        return False
+        send_command(f"play {appid}")
+        # Give Steam a moment to actually register the game as running before
+        # the first aset — the first achievement of a session otherwise fires
+        # with zero delay, right on top of "play", and unlocks with an epoch
+        # (offline-looking) timestamp instead of a real one. A bot that just
+        # (re)connected (fresh ASF start, or a reconnect after a mid-session
+        # network blip) needs longer for Steam to consider the session
+        # properly "online" than one that was already connected throughout.
+        time.sleep(RECONNECT_SETTLE_DELAY if reconnected else WARM_SETTLE_DELAY)
 
-    # awaiting_first_unlock (set above): on a brand new profile, the first
-    # achievement that isn't already unlocked has no real "previous unlock"
-    # to pace a delay from, so it fires immediately instead of waiting out
-    # its configured gap.
-
-    i = start_from
-
-    while i < len(achievements):
-        ach = achievements[i]
-
-        if unlocked.get(ach["id"], False):
-            print(f"Already unlocked, skipping: {ach['id']}")
+        def advance(i, issued_at):
+            """Record achievement i as done and schedule (or end) what's next."""
             progress["last_completed"] = i
             progress["appid"] = appid
-            save_progress(progress_path, progress)
-            i += 1
-            continue
 
-        if awaiting_first_unlock:
-            remaining_delay = 0
-        else:
-            remaining_delay = ach["delay"]
-            if progress["next_unlock_at"] is not None:
-                unlock_at = datetime.fromisoformat(progress["next_unlock_at"])
-                remaining_delay = max(0, int((unlock_at - datetime.now()).total_seconds()))
+            next_i = i + 1
+            if next_i < len(achievements) and achievements[next_i]["new_session"]:
+                gap = achievements[next_i]["delay"]
                 progress["next_unlock_at"] = None
-        awaiting_first_unlock = False
+                progress["session_ends_at"] = (datetime.now() + timedelta(seconds=gap)).isoformat()
+                save_progress(progress_path, progress)
+                send_command("resume")
+                _schedule_asf_shutdown()
+                print(f"Session complete. Next session in {gap // 3600}h {(gap % 3600) // 60}m.")
+                return True  # stop the script
+            elif next_i < len(achievements):
+                progress["next_unlock_at"] = (issued_at + timedelta(seconds=achievements[next_i]["delay"])).isoformat()
+            else:
+                progress["next_unlock_at"] = None
 
-        if remaining_delay > 0:
-            print(f"Waiting {remaining_delay}s before unlocking: {ach['id']}...")
-            time.sleep(remaining_delay)
-
-        issued_at = datetime.now()
-        status, result = send_aset(appid, ach["id"])
-
-        if status == "unreachable":
-            print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL} — is it running?")
-            progress["next_unlock_at"] = datetime.now().isoformat()
             save_progress(progress_path, progress)
-            # "play" was already sent above, so leaving ASF running here
-            # would strand the bot stuck "playing" this game indefinitely.
-            # The API isn't reachable, so there's no graceful way to tell it
-            # to resume/exit — force-kill it directly instead.
-            schedule_asf_kill()
-            return
+            return False
 
-        if status == "unknown":
-            print(f"ERROR: unexpected response for {ach['id']}: {result}")
-            progress["next_unlock_at"] = datetime.now().isoformat()
-            save_progress(progress_path, progress)
-            schedule_asf_kill()
-            return
+        # awaiting_first_unlock (set above): on a brand new profile, the first
+        # achievement has no real "previous unlock" to pace a delay from, so
+        # it fires immediately instead of waiting out its configured gap.
 
-        if status == "already_unlocked":
-            print(f"Already unlocked, skipping: {ach['id']}")
-        else:
-            print(f"Unlocked: {ach['id']} at [{issued_at:%H:%M:%S}]")
+        i = start_from
 
-        if advance(i, issued_at):
-            return
-        i += 1
+        while i < len(achievements):
+            ach = achievements[i]
 
-    send_command("resume")
-    _schedule_asf_shutdown()
-    print("\nAll achievements unlocked.")
-    cleanup_profile(config_path, progress_path)
+            if awaiting_first_unlock:
+                remaining_delay = 0
+            else:
+                remaining_delay = ach["delay"]
+                if progress["next_unlock_at"] is not None:
+                    unlock_at = datetime.fromisoformat(progress["next_unlock_at"])
+                    remaining_delay = max(0, int((unlock_at - datetime.now()).total_seconds()))
+                    progress["next_unlock_at"] = None
+            awaiting_first_unlock = False
+
+            if remaining_delay > 0:
+                print(f"Waiting {remaining_delay}s before unlocking: {ach['id']}...")
+                time.sleep(remaining_delay)
+
+            issued_at = datetime.now()
+
+            # Achievements that really unlocked together (delay within
+            # SIMULTANEOUS_MAX_DELAY after this one, same session) go out in a
+            # single aset, so they share one timestamp instead of drifting a
+            # second apart per API call.
+            group_end = i + 1
+            while (group_end < len(achievements)
+                   and not achievements[group_end]["new_session"]
+                   and achievements[group_end]["delay"] <= SIMULTANEOUS_MAX_DELAY):
+                group_end += 1
+            group = achievements[i:group_end]
+
+            # Always wait this achievement's own delay first, then check —
+            # so a batch like 1,2,3,4,5,6 with 1,2,5 already unlocked still
+            # spends each entry's own configured gap in order, instead of
+            # skipping instantly and leaking that entry's delay onto the
+            # next one.
+            for a in group:
+                if unlocked.get(a["id"], False):
+                    print(f"Already unlocked, skipping: {a['id']}")
+            to_unlock = [a["id"] for a in group if not unlocked.get(a["id"], False)]
+
+            if to_unlock:
+                label = ", ".join(str(a) for a in to_unlock)
+                status, result = send_aset(appid, to_unlock)
+
+                if status == "unreachable":
+                    print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL} — is it running?")
+                    progress["next_unlock_at"] = datetime.now().isoformat()
+                    save_progress(progress_path, progress)
+                    # "play" was already sent above, so leaving ASF running here
+                    # would strand the bot stuck "playing" this game indefinitely.
+                    # The API isn't reachable, so there's no graceful way to tell it
+                    # to resume/exit — force-kill it directly instead.
+                    schedule_asf_kill()
+                    return
+
+                if status == "unknown":
+                    print(f"ERROR: unexpected response for {label}: {result}")
+                    progress["next_unlock_at"] = datetime.now().isoformat()
+                    save_progress(progress_path, progress)
+                    schedule_asf_kill()
+                    return
+
+                if status == "already_unlocked":
+                    print(f"Already unlocked, skipping: {label}")
+                else:
+                    print(f"Unlocked: {label} at [{issued_at:%H:%M:%S}]")
+
+            for gi in range(i, group_end):
+                if advance(gi, issued_at):
+                    return
+            i = group_end
+
+        send_command("resume")
+        _schedule_asf_shutdown()
+        print("\nAll achievements unlocked.")
+        cleanup_profile(config_path, progress_path)
+    finally:
+        stop_caffeinate(caffeinate_proc)
