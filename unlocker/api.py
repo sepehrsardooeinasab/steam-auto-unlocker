@@ -143,15 +143,23 @@ def send_command(command):
         return (result if response is not None else None), reconnected
 
 
-def send_aset(appid, ach_id):
-    result, _ = send_command(f"aset {appid} {ach_id}")
+def send_aset(appid, ach_ids):
+    """ach_ids is one achievement id or a list of them. A list goes out as a
+    single comma-separated aset, which ASF pushes to Steam as one stats
+    update — so achievements that really unlock together (e.g. "beat the
+    game on easy/medium/hard") share one timestamp instead of drifting a
+    second apart per separate API round trip."""
+    if isinstance(ach_ids, (list, tuple)):
+        ach_ids = ",".join(str(a) for a in ach_ids)
+    result, _ = send_command(f"aset {appid} {ach_ids}")
 
     if result is None:
         return "unreachable", ""
-    if "already unlocked" in result.lower():
-        return "already_unlocked", result
+    # Checked before "already unlocked": a batch can legitimately mix both.
     if "success" in result.lower():
         return "success", result
+    if "already unlocked" in result.lower():
+        return "already_unlocked", result
     return "unknown", result
 
 

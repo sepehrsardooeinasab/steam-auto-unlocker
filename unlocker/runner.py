@@ -27,6 +27,10 @@ WARM_SETTLE_DELAY = 10  # bot was already connected to Steam throughout
 # this one is generously long rather than re-guessing a slightly bigger
 # fixed number.
 RECONNECT_SETTLE_DELAY = 60
+# Unlocks this close together in the source data count as simultaneous (a
+# 1s delay is usually the same event straddling a second boundary), and are
+# batched into a single aset. Anything longer gets its own aset.
+SIMULTANEOUS_MAX_DELAY = 1
 
 
 def _session_bounds(achievements):
@@ -281,15 +285,30 @@ def run(game_name=None, force=False, time_only=False):
 
             issued_at = datetime.now()
 
+            # Achievements that really unlocked together (delay within
+            # SIMULTANEOUS_MAX_DELAY after this one, same session) go out in a
+            # single aset, so they share one timestamp instead of drifting a
+            # second apart per API call.
+            group_end = i + 1
+            while (group_end < len(achievements)
+                   and not achievements[group_end]["new_session"]
+                   and achievements[group_end]["delay"] <= SIMULTANEOUS_MAX_DELAY):
+                group_end += 1
+            group = achievements[i:group_end]
+
             # Always wait this achievement's own delay first, then check —
             # so a batch like 1,2,3,4,5,6 with 1,2,5 already unlocked still
             # spends each entry's own configured gap in order, instead of
             # skipping instantly and leaking that entry's delay onto the
             # next one.
-            if unlocked.get(ach["id"], False):
-                print(f"Already unlocked, skipping: {ach['id']}")
-            else:
-                status, result = send_aset(appid, ach["id"])
+            for a in group:
+                if unlocked.get(a["id"], False):
+                    print(f"Already unlocked, skipping: {a['id']}")
+            to_unlock = [a["id"] for a in group if not unlocked.get(a["id"], False)]
+
+            if to_unlock:
+                label = ", ".join(str(a) for a in to_unlock)
+                status, result = send_aset(appid, to_unlock)
 
                 if status == "unreachable":
                     print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL} — is it running?")
@@ -303,20 +322,21 @@ def run(game_name=None, force=False, time_only=False):
                     return
 
                 if status == "unknown":
-                    print(f"ERROR: unexpected response for {ach['id']}: {result}")
+                    print(f"ERROR: unexpected response for {label}: {result}")
                     progress["next_unlock_at"] = datetime.now().isoformat()
                     save_progress(progress_path, progress)
                     schedule_asf_kill()
                     return
 
                 if status == "already_unlocked":
-                    print(f"Already unlocked, skipping: {ach['id']}")
+                    print(f"Already unlocked, skipping: {label}")
                 else:
-                    print(f"Unlocked: {ach['id']} at [{issued_at:%H:%M:%S}]")
+                    print(f"Unlocked: {label} at [{issued_at:%H:%M:%S}]")
 
-            if advance(i, issued_at):
-                return
-            i += 1
+            for gi in range(i, group_end):
+                if advance(gi, issued_at):
+                    return
+            i = group_end
 
         send_command("resume")
         _schedule_asf_shutdown()
