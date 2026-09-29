@@ -11,7 +11,7 @@ show_help() {
     cat <<'EOF'
 Usage: runsteamunlocker [-f] <config-name>
        runsteamunlocker -t <config-name>
-       runsteamunlocker [-h | -a | -c | -j | -k]
+       runsteamunlocker [-h | -a | -ls | -c | -j | -k]
 
   <config-name>   Run the unlocker using jsons/config_<config-name>.json.
                   Shows the upcoming session's length and asks to confirm.
@@ -21,6 +21,9 @@ Usage: runsteamunlocker [-f] <config-name>
   -k, --kill      Stop ArchiSteamFarm and any running unlocker session.
   -h, --help      Show this help.
   -a              List available jsons/config_*.json profiles.
+  -ls, --status   List every profile's next session (number, length,
+                  achievement count) and when it can run, without
+                  running anything or touching ASF.
   -c              Open the project in VS Code.
   -j              Open the JSON/unlock scheduler builder.
 EOF
@@ -87,6 +90,9 @@ case "${1-}" in
         ;;
     -a)
         list_configs
+        ;;
+    -ls|--status)
+        exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" --status
         ;;
     -c)
         code "$PROJECT_DIR"

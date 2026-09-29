@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import time
@@ -14,6 +15,7 @@ from unlocker.api import (
     stop_caffeinate)
 from unlocker.state import (
     DEFAULT_PROGRESS,
+    list_profiles,
     profile_paths,
     load_config,
     load_progress,
@@ -119,6 +121,80 @@ def _format_duration(seconds):
     if minutes:
         return f"{minutes}m"
     return f"{int(seconds)}s"
+
+
+def _session_status(config, progress):
+    """Read-only summary of a profile's next session, for listing: returns
+    None when every achievement is done, else (session_number, session_total,
+    count, duration_seconds, wait_seconds). Mirrors run()'s wait rules
+    without touching ASF or writing progress."""
+    achievements = config["achievements"]
+    if progress["appid"] != 0 and progress["appid"] != config["appid"]:
+        progress = dict(DEFAULT_PROGRESS)
+
+    start_from = progress["last_completed"] + 1
+    if start_from >= len(achievements):
+        return None
+
+    session_bounds = _session_bounds(achievements)
+    session_index = next(idx for idx, (s, e) in enumerate(session_bounds) if s <= start_from < e)
+    first_run = progress["last_completed"] == -1
+    end, wait, duration = _estimate_session(achievements, start_from, progress, first_run)
+
+    if progress["session_ends_at"] is not None:
+        # Past cooldown, run() resets next_unlock_at to now, so it's ready.
+        remaining = datetime.fromisoformat(progress["session_ends_at"]) - datetime.now()
+        wait = max(0, int(remaining.total_seconds()))
+
+    return session_index + 1, len(session_bounds), end - start_from, duration, wait
+
+
+def list_status():
+    """Prints one line per profile: next session, its size/length, and when it can run."""
+    profiles = list_profiles()
+    if not profiles:
+        print("No configs found in jsons/.")
+        return
+
+    rows = []
+    for name, _ in profiles:
+        config_path, progress_path = profile_paths(name)
+        label = name or "(default)"
+        try:
+            config = json.loads(config_path.read_text())
+            if not config.get("achievements"):
+                rows.append((label, "no achievements in config", "", ""))
+                continue
+            status = _session_status(config, load_progress(progress_path))
+        except (json.JSONDecodeError, OSError, KeyError, ValueError) as e:
+            rows.append((label, f"unreadable ({e.__class__.__name__})", "", ""))
+            continue
+
+        if status is None:
+            rows.append((label, "all achievements completed", "", ""))
+            continue
+
+        number, total, count, duration, wait = status
+        if wait > 0:
+            run_at = datetime.now() + timedelta(seconds=wait)
+            when = f"in {_format_duration(wait)} (at {run_at:%H:%M})"
+        else:
+            when = "ready now"
+        rows.append((
+            label,
+            f"Session {number}/{total}",
+            f"~{_format_duration(duration)} ({count} achievement{'s' if count != 1 else ''})",
+            when,
+        ))
+
+    # Message-only rows (completed/unreadable) don't count toward column widths.
+    full = [r for r in rows if r[3]] or [("", "", "", "")]
+    widths = [max(len(r[c]) for r in rows if r in full or c == 0) for c in range(3)]
+    for r in rows:
+        if r[3]:
+            print("  ".join(r[c].ljust(widths[c]) for c in range(3)) + "  " + r[3])
+        else:
+            print(f"{r[0].ljust(widths[0])}  {r[1]}")
 
 
 def run(game_name=None, force=False, time_only=False):

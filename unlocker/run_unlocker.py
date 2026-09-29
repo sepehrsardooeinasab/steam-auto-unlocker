@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from unlocker.runner import run
+from unlocker.runner import list_status, run
 from unlocker.state import list_profiles
 
 
@@ -29,6 +29,9 @@ def choose_game_name():
 
 if __name__ == "__main__":
     args = sys.argv[1:]
+    if "--status" in args:
+        list_status()
+        sys.exit(0)
     force = "-f" in args or "--force" in args
     time_only = "-t" in args or "--time" in args
     positional = [a for a in args if a not in ("-f", "--force", "-t", "--time")]
