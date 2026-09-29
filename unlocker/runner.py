@@ -150,7 +150,8 @@ def _session_status(config, progress):
 
 
 def list_status():
-    """Prints one line per profile: next session, its size/length, and when it can run."""
+    """Prints a table of every profile's next session: number, length,
+    achievement count, and when it can run."""
     profiles = list_profiles()
     if not profiles:
         print("No configs found in jsons/.")
@@ -163,38 +164,25 @@ def list_status():
         try:
             config = json.loads(config_path.read_text())
             if not config.get("achievements"):
-                rows.append((label, "no achievements in config", "", ""))
+                rows.append((label, "-", "-", "-", "no achievements in config"))
                 continue
             status = _session_status(config, load_progress(progress_path))
         except (json.JSONDecodeError, OSError, KeyError, ValueError) as e:
-            rows.append((label, f"unreadable ({e.__class__.__name__})", "", ""))
+            rows.append((label, "-", "-", "-", f"unreadable ({e.__class__.__name__})"))
             continue
 
         if status is None:
-            rows.append((label, "all achievements completed", "", ""))
+            rows.append((label, "-", "-", "-", "completed"))
             continue
 
         number, total, count, duration, wait = status
-        if wait > 0:
-            run_at = datetime.now() + timedelta(seconds=wait)
-            when = f"in {_format_duration(wait)} (at {run_at:%H:%M})"
-        else:
-            when = "ready now"
-        rows.append((
-            label,
-            f"Session {number}/{total}",
-            f"~{_format_duration(duration)} ({count} achievement{'s' if count != 1 else ''})",
-            when,
-        ))
+        when = _format_duration(wait) if wait > 0 else "now"
+        rows.append((label, f"{number}/{total}", f"~{_format_duration(duration)}", str(count), when))
 
-    # Message-only rows (completed/unreadable) don't count toward column widths.
-    full = [r for r in rows if r[3]] or [("", "", "", "")]
-    widths = [max(len(r[c]) for r in rows if r in full or c == 0) for c in range(3)]
-    for r in rows:
-        if r[3]:
-            print("  ".join(r[c].ljust(widths[c]) for c in range(3)) + "  " + r[3])
-        else:
-            print(f"{r[0].ljust(widths[0])}  {r[1]}")
+    header = ("NAME", "SESSION", "DURATION", "#ACH", "READY IN")
+    widths = [max(len(r[c]) for r in [header] + rows) for c in range(len(header))]
+    for r in [header, tuple("-" * w for w in widths)] + rows:
+        print("  ".join(r[c].ljust(widths[c]) for c in range(len(header))).rstrip())
 
 
 def run(game_name=None, force=False, time_only=False):
