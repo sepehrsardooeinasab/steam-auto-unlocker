@@ -666,15 +666,18 @@
       return;
     }
 
-    var warningsHtml = dangerHtml + latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("");
+    // Notices go under the preview (as under the paste box) so the box
+    // sits in the same place on every tab.
+    var warningsHtml = '<div class="notices-below">' + dangerHtml +
+      latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("") + "</div>";
 
     if (fileKey === "json") {
-      slot.innerHTML = warningsHtml + '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>";
+      slot.innerHTML = '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>" + warningsHtml;
     } else {
-      slot.innerHTML = warningsHtml + rowsToTable(latest.csvRows, {
+      slot.innerHTML = rowsToTable(latest.csvRows, {
         targets: latest.csvTargets, gapActions: latest.gapActions, edits: edits,
         originals: latest.originals, breaks: breaks, autoBreaks: latest.autoBreaks
-      });
+      }) + warningsHtml;
     }
   }
 

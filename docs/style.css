@@ -293,12 +293,43 @@
   }
   .box-header .stats-strip b { color: var(--box-text); font-weight: 600; }
 
-  /* Fixed height so switching tabs (text/settings/json/csv) never
-     resizes the box. */
-  .box-content { padding: 1.3rem; height: 480px; overflow-y: auto; }
+  /* Fixed height (or, on desktop, the console's height) so switching tabs
+     (text/settings/json/csv) never resizes the box.
+
+     The main box of each tab (paste box, JSON preview, Timeline table) is
+     sized from this screen — its height minus one line for the help link
+     under it — so it sits in the same place at the same size on every
+     tab; notices below it scroll into view. */
+  .box-content {
+    padding: 1.3rem;
+    height: 480px;
+    overflow-y: auto;
+    container-type: size;
+    --pane-box-h: max(200px, calc(100cqh - 2.2rem));
+  }
 
   .view-pane { display: none; }
-  .view-pane.active { display: block; height: 100%; }
+  .view-pane.active { display: block; }
+  .view-pane[data-view="input"] > .field { margin-bottom: 0; }
+
+  /* On desktop the console is sized to the window (~83% of its height),
+     like a Switch filling the view; the box's screen stretches with it.
+     Below a usable height the page scrolls instead. */
+  @media (min-width: 901px) {
+    body { display: flex; flex-direction: column; height: 100vh; }
+    header.masthead { flex: none; }
+    .shell {
+      /* console itself is ~83% of the window; centered in the space left */
+      flex: none;
+      height: calc(83vh + 2rem);
+      margin: auto 0;
+      min-height: 560px;
+      grid-template-rows: minmax(0, 1fr);
+      padding: 1rem 1.5rem;
+    }
+    .box { height: 100%; }
+    .box-content { flex: 1; height: auto; min-height: 0; }
+  }
 
   label {
     display: block;
@@ -326,8 +357,8 @@
      or data — a plain readable face suits it better than the mono font
      used for IDs and file previews. */
   textarea {
-    height: 320px;
-    resize: vertical;
+    height: var(--pane-box-h);
+    resize: none;
     line-height: 1.5;
     font-family: "Archivo", sans-serif;
     font-size: 0.78rem;
@@ -363,7 +394,15 @@
   }
   .notice.warn { background: var(--warn-bg); color: var(--warn); }
   .notice.danger { background: var(--danger-bg); color: var(--danger); }
-  #input-alert-slot .notice { margin: 0.6rem 0 0; }
+  #input-alert-slot .notice, .notices-below .notice { margin: 0.6rem 0 0; }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
   .notice.info { background: var(--info-bg); color: var(--info); }
 
   pre.file-preview {
@@ -376,7 +415,7 @@
     font-size: 0.78rem;
     line-height: 1.55;
     overflow: auto;
-    max-height: 400px;
+    height: var(--pane-box-h);
     color: var(--box-text);
   }
   .tok-key { color: var(--accent-strong); }
@@ -385,7 +424,7 @@
 
   .table-wrap {
     overflow-x: auto;
-    max-height: 400px;
+    height: var(--pane-box-h);
     overflow-y: auto;
     border: 1px solid var(--box-border);
     border-radius: 3px;
