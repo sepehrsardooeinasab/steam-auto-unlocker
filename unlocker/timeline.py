@@ -110,7 +110,8 @@ def show_timeline(name, which=None):
 
     where = f"from {csv_path.relative_to(PROJECT_DIR)}" if csv_path else "no CSV found — names unknown"
     state = "finished" if finished else f"session {current + 1}/{len(sessions)}"
-    print(f"{name}  ·  {len(achievements)} achievements  ·  {state}  ·  {where}")
+    source = f"  ·  copied from {config['copied_from']}" if config.get("copied_from") else ""
+    print(f"{name}  ·  {len(achievements)} achievements  ·  {state}{source}  ·  {where}")
 
     header = ("#", "ACHIEVEMENT", "ID", "DELAY", "STATUS")
     blocks = []

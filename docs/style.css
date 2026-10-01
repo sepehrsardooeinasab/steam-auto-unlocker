@@ -422,6 +422,10 @@
     color: var(--info);
     font-style: italic;
   }
+  table.csv-table tr.meta-row td {
+    color: var(--box-text-dim);
+    font-style: italic;
+  }
   table.csv-table tr.session-row td {
     background: var(--box-bg-alt);
     font-weight: 700;

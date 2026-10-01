@@ -151,7 +151,7 @@
     return {sessions: sessions, gaps: gaps, durations: durations};
   }
 
-  function buildConfig(appid, sessions, gaps) {
+  function buildConfig(appid, sessions, gaps, copiedFrom) {
     var achievements = [];
     sessions.forEach(function (session, si) {
       session.forEach(function (ach, ai) {
@@ -163,7 +163,10 @@
         achievements.push({id: ach.ach_id, delay: delay, new_session: newSession});
       });
     });
-    return {appid: appid, achievements: achievements};
+    var config = {appid: appid};
+    if (copiedFrom) config.copied_from = copiedFrom;
+    config.achievements = achievements;
+    return config;
   }
 
   function roughDuration(seconds) {
@@ -212,9 +215,13 @@
   // config keeps that gap. A session's first achievement has no delay of
   // its own (always 0), so it isn't editable itself.
   var CSV_DELAY_COL = 5;
-  function buildCsvRows(sessions, gaps, durations) {
+  function buildCsvRows(sessions, gaps, durations, copiedFrom) {
     var rows = [["session", "#", "achievement", "id", "unlock_time", "delay", "delay_s"]];
     var targets = [null];
+    if (copiedFrom) {
+      rows.push(["Copied from: " + copiedFrom, "", "", "", "", "", ""]);
+      targets.push(null);
+    }
     sessions.forEach(function (session, i) {
       if (i > 0) {
         rows.push(["Gap before session " + (i + 1), "", "", "", "", roughDurationCsv(gaps[i - 1]), gaps[i - 1]]);
@@ -306,7 +313,7 @@
 
     body.forEach(function (r, ri) {
       if (isLabelRow(r)) {
-        var cls = /^Gap/.test(r[0]) ? "gap-row" : "session-row";
+        var cls = /^Gap/.test(r[0]) ? "gap-row" : /^Copied from:/.test(r[0]) ? "meta-row" : "session-row";
         html += '<tr class="' + cls + '"><td colspan="' + CSV_DELAY_COL + '">' + escapeHtml(r[0]) + "</td>" +
           delayCell(r, ri) + "<td>" + escapeHtml(r[CSV_DELAY_COL + 1]) + "</td></tr>";
       } else {
@@ -340,6 +347,7 @@
     exportText: document.getElementById("export-text"),
     appid: document.getElementById("appid"),
     gameName: document.getElementById("game-name"),
+    copiedFrom: document.getElementById("copied-from"),
     gapLimit: document.getElementById("gap-limit"),
     cumLimit: document.getElementById("cum-limit"),
     minGap: document.getElementById("min-gap"),
@@ -418,6 +426,7 @@
         exportText: els.exportText.value,
         appid: els.appid.value,
         gameName: els.gameName.value,
+        copiedFrom: els.copiedFrom.value,
         gapLimit: els.gapLimit.value,
         cumLimit: els.cumLimit.value,
         minGap: els.minGap.value,
@@ -434,6 +443,7 @@
       if (d.exportText) els.exportText.value = d.exportText;
       if (d.appid) els.appid.value = d.appid;
       if (d.gameName) els.gameName.value = d.gameName;
+      if (d.copiedFrom) els.copiedFrom.value = d.copiedFrom;
       if (d.gapLimit) els.gapLimit.value = d.gapLimit;
       if (d.cumLimit) els.cumLimit.value = d.cumLimit;
       if (d.minGap) els.minGap.value = d.minGap;
@@ -445,6 +455,7 @@
   function recompute() {
     var appidVal = parseInt(els.appid.value, 10);
     var gameName = els.gameName.value.trim().toLowerCase();
+    var copiedFrom = els.copiedFrom.value.trim();
     var gapLimitSec = (parseFloat(els.gapLimit.value) || 0) * 3600;
     var cumLimitSec = (parseFloat(els.cumLimit.value) || 0) * 3600;
     var minGapSec = (parseFloat(els.minGap.value) || 0) * 3600;
@@ -468,7 +479,7 @@
     var simultaneous = Object.keys(timeMap).filter(function (t) { return timeMap[t].length > 1; });
 
     var split = applyEdits(splitSessions(withDelays, gapLimitSec, cumLimitSec), edits);
-    var config = buildConfig(appidVal, split.sessions, split.gaps);
+    var config = buildConfig(appidVal, split.sessions, split.gaps, copiedFrom);
 
     // Unlike the warnings below, a re-sorted paste makes every ach_id
     // wrong, so it's surfaced loudly (red Download button, input-pane
@@ -494,7 +505,7 @@
 
     var suffix = gameName ? "_" + gameName : "";
 
-    var csv = buildCsvRows(split.sessions, split.gaps, split.durations);
+    var csv = buildCsvRows(split.sessions, split.gaps, split.durations, copiedFrom);
 
     latest = {
       errors: [],
@@ -627,6 +638,7 @@
   function resetSettingFields() {
     els.appid.value = "";
     els.gameName.value = "";
+    els.copiedFrom.value = "";
     els.gapLimit.value = "3";
     els.cumLimit.value = "6";
     els.minGap.value = "1";
@@ -638,7 +650,7 @@
   // runs first and scheduleRecompute's saveDraft() sees the reset values.
   els.exportText.addEventListener("input", resetSettingFields);
 
-  [els.exportText, els.appid, els.gameName, els.gapLimit, els.cumLimit, els.minGap].forEach(function (el) {
+  [els.exportText, els.appid, els.gameName, els.copiedFrom, els.gapLimit, els.cumLimit, els.minGap].forEach(function (el) {
     el.addEventListener("input", scheduleRecompute);
   });
 
