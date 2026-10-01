@@ -71,7 +71,8 @@
   .masthead .brand span { color: var(--accent); }
 
   .masthead .tagline {
-    font-size: 0.8rem;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.74rem;
     color: var(--nav-text);
     letter-spacing: 0.01em;
   }
