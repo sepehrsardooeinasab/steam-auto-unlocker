@@ -354,6 +354,7 @@
     resetBtn: document.getElementById("reset-btn"),
     downloadBtn: document.getElementById("download-btn"),
     folderBtn: document.getElementById("folder-btn"),
+    forgetFolderBtn: document.getElementById("forget-folder-btn"),
     folderStatus: document.getElementById("folder-status"),
     boxTitle: document.getElementById("box-title"),
     statsStrip: document.getElementById("stats-strip"),
@@ -794,6 +795,56 @@
       .then(function (writable) { return writable.write(content).then(function () { return writable.close(); }); });
   }
 
+  function ensureFolderPermission(handle) {
+    if (!handle.queryPermission) return Promise.resolve(true);
+    var opts = {mode: "readwrite"};
+    return handle.queryPermission(opts).then(function (state) {
+      if (state === "granted") return true;
+      return handle.requestPermission(opts).then(function (s) { return s === "granted"; });
+    });
+  }
+
+  function setFolder(handle) {
+    dirHandle = handle;
+    els.folderStatus.innerHTML = handle ? 'Saving to <b>' + escapeHtml(handle.name) + "/</b>" : "";
+    els.forgetFolderBtn.style.display = handle ? "inline-block" : "none";
+  }
+
+  // The chosen folder survives reloads and new windows by keeping its
+  // handle in IndexedDB (handles can't go in localStorage). It's a separate
+  // store from the draft, so Reset never touches it.
+  var FOLDER_DB = "unlock-scheduler", FOLDER_STORE = "handles", FOLDER_KEY = "save-folder";
+
+  function openFolderDb() {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open(FOLDER_DB, 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore(FOLDER_STORE); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+
+  function folderDbRequest(mode, fn) {
+    return openFolderDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var req = fn(db.transaction(FOLDER_STORE, mode).objectStore(FOLDER_STORE));
+        req.onsuccess = function () { db.close(); resolve(req.result); };
+        req.onerror = function () { db.close(); reject(req.error); };
+      });
+    });
+  }
+
+  function storeFolderHandle(handle) {
+    return folderDbRequest("readwrite", function (store) {
+      return handle ? store.put(handle, FOLDER_KEY) : store.delete(FOLDER_KEY);
+    }).catch(function () { /* storage blocked: folder just won't persist */ });
+  }
+
+  function loadFolderHandle() {
+    return folderDbRequest("readonly", function (store) { return store.get(FOLDER_KEY); })
+      .catch(function () { return null; });
+  }
+
   function saveOneFallback(downloads, filename, mime, content) {
     if (downloads) {
       return downloads.save({filename: filename, data: content}).catch(function (err) {
@@ -819,7 +870,13 @@
     ];
 
     if (dirHandle) {
-      Promise.all(files.map(function (f) { return saveIntoFolder(f.dirParts, f.filename, f.content); }))
+      // Must run straight from the click: requestPermission needs the
+      // user gesture, and a handle restored from IndexedDB starts at "prompt".
+      ensureFolderPermission(dirHandle)
+        .then(function (granted) {
+          if (!granted) throw new Error("permission to " + dirHandle.name + "/ was denied");
+          return Promise.all(files.map(function (f) { return saveIntoFolder(f.dirParts, f.filename, f.content); }));
+        })
         .then(function () { resetAll(); showToast("Saved config.json + CSV to " + dirHandle.name + "/ — fields reset"); })
         .catch(function (err) { showToast("Couldn't save: " + (err && err.message ? err.message : "unknown error")); });
       return;
@@ -845,11 +902,17 @@
     els.folderBtn.style.display = "inline-block";
     els.folderBtn.addEventListener("click", function () {
       window.showDirectoryPicker({mode: "readwrite"}).then(function (handle) {
-        dirHandle = handle;
-        els.folderStatus.innerHTML = 'Saving to <b>' + escapeHtml(handle.name) + "/</b>";
+        setFolder(handle);
+        storeFolderHandle(handle);
         showToast("Folder selected — downloads will save there silently");
       }).catch(function () { /* user cancelled, or blocked (e.g. inside a sandboxed iframe) */ });
     });
+    els.forgetFolderBtn.addEventListener("click", function () {
+      setFolder(null);
+      storeFolderHandle(null);
+      showToast("Save folder forgotten");
+    });
+    loadFolderHandle().then(function (handle) { if (handle) setFolder(handle); });
   }
 
   // ---------------------------------------------------------------
