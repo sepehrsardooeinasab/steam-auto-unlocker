@@ -1,4 +1,5 @@
 import json
+import signal
 import subprocess
 import sys
 import time
@@ -10,6 +11,7 @@ from unlocker.api import (
     send_aset,
     send_alist,
     ensure_asf_running,
+    notify,
     schedule_asf_kill,
     start_caffeinate,
     stop_caffeinate)
@@ -44,6 +46,18 @@ def _session_bounds(achievements):
             bounds.append((start, i))
             start = i
     return bounds
+
+
+class _Signalled(Exception):
+    """Raised from a SIGHUP/SIGTERM handler, so the run unwinds through its
+    finally (stopping caffeinate) instead of dying on the spot."""
+    def __init__(self, signum):
+        super().__init__(signal.Signals(signum).name)
+        self.signum = signum
+
+
+def _raise_signalled(signum, frame):
+    raise _Signalled(signum)
 
 
 def _schedule_asf_shutdown(delay_seconds=ASF_SHUTDOWN_DELAY):
@@ -289,6 +303,11 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
 
     # Only touch ASF once the user has actually committed to running —
     # not before, so declining the prompt above never starts it up.
+    game_label = game_name or "default"
+    # SIGHUP: the terminal window was closed. SIGTERM: runsteamunlocker -k.
+    signal.signal(signal.SIGHUP, _raise_signalled)
+    signal.signal(signal.SIGTERM, _raise_signalled)
+
     caffeinate_proc = start_caffeinate()
     if caffeinate_proc is not None:
         awake_for = (max(start_at, ready_at) - now).total_seconds() + est_duration
@@ -313,6 +332,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
         unlocked, reconnected = send_alist(appid)
         if unlocked is None:
             print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL}")
+            notify(game_label, "Stopped: ArchiSteamFarm isn't reachable.", error=True)
             # ensure_asf_running() may have just started it — don't leave
             # that process orphaned and running for the next session to
             # trip over.
@@ -353,6 +373,9 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
                 send_command("resume")
                 _schedule_asf_shutdown()
                 print(f"Session complete. Next session in {gap // 3600}h {(gap % 3600) // 60}m.")
+                next_at = datetime.now() + timedelta(seconds=gap)
+                notify(game_label, f"Session {session_index + 1}/{len(session_bounds)} done. "
+                              f"Next in {_format_duration(gap)} (at {next_at:%a %H:%M}).")
                 return True  # stop the script
             elif next_i < len(achievements):
                 progress["next_unlock_at"] = (issued_at + timedelta(seconds=achievements[next_i]["delay"])).isoformat()
@@ -414,6 +437,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
 
                 if status == "unreachable":
                     print(f"ERROR: ArchiSteamFarm isn't reachable at {API_URL} — is it running?")
+                    notify(game_label, "Stopped mid-session: ArchiSteamFarm isn't reachable.", error=True)
                     progress["next_unlock_at"] = datetime.now().isoformat()
                     save_progress(progress_path, progress)
                     # "play" was already sent above, so leaving ASF running here
@@ -425,6 +449,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
 
                 if status == "unknown":
                     print(f"ERROR: unexpected response for {label}: {result}")
+                    notify(game_label, f"Stopped mid-session: unexpected response for {label}.", error=True)
                     progress["next_unlock_at"] = datetime.now().isoformat()
                     save_progress(progress_path, progress)
                     schedule_asf_kill()
@@ -443,6 +468,15 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
         send_command("resume")
         _schedule_asf_shutdown()
         print("\nAll achievements unlocked.")
+        notify(game_label, "All achievements unlocked.")
         cleanup_profile(game_name)
+    except _Signalled as e:
+        if e.signum == signal.SIGHUP:
+            notify(game_label, "Stopped: the terminal running it was closed.", error=True)
+        else:
+            print("\nStopped.")
+    except Exception as e:
+        notify(game_label, f"Crashed: {e.__class__.__name__}: {e}", error=True)
+        raise
     finally:
         stop_caffeinate(caffeinate_proc)
