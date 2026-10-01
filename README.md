@@ -77,6 +77,8 @@ Put these lines in `~/.zshrc` — or, if you use oh-my-zsh, in a file under `~/.
 ```sh
 runsteamunlocker <config-name>      # run the unlocker using jsons/config_<config-name>.json
 runsteamunlocker -f <config-name>   # same, but skip the confirmation prompt
+runsteamunlocker -w <config-name>   # confirm now, wait until the session can run, then start it
+runsteamunlocker -in 2h <config-name>  # confirm now, start in 2h (also 30, 45m, 1h30m)
 runsteamunlocker -t <config-name>   # print the next session's wait/duration and exit, without running
 runsteamunlocker -k                 # stop ArchiSteamFarm and any running unlocker session
 runsteamunlocker -a                 # list available jsons/config_*.json profiles

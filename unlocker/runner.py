@@ -185,7 +185,11 @@ def list_status():
         print("  ".join(r[c].ljust(widths[c]) for c in range(len(header))).rstrip())
 
 
-def run(game_name=None, force=False, time_only=False):
+def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=False):
+    """delay: seconds to wait before starting (-in). wait_ready: wait until
+    the session can actually run — cooldown over and first unlock due — and
+    start then (-w). Either way the wait happens after the confirmation
+    prompt, under caffeinate, and before ASF is touched."""
     config_path, progress_path = profile_paths(game_name)
 
     config = load_config(config_path)
@@ -225,33 +229,55 @@ def run(game_name=None, force=False, time_only=False):
     )
 
 
+    now = datetime.now()
+    # Set when the between-sessions cooldown is still running but -w/-in
+    # will wait it out; the cooldown reset below then happens after that wait.
+    cooldown_ends = None
     if progress["session_ends_at"] is not None:
         session_start = datetime.fromisoformat(progress["session_ends_at"])
-        if datetime.now() < session_start:
-            remaining = session_start - datetime.now()
+        if now < session_start:
+            remaining = session_start - now
             if time_only:
                 print(f"{int(remaining.total_seconds())} {est_duration}")
                 return
-            hours, rem = divmod(int(remaining.total_seconds()), 3600)
-            minutes = rem // 60
-            print(f"Session can be run after {hours}h {minutes}m (at {session_start:%H:%M}).")
-            print(session_line)
+            if not wait_ready and (delay is None or now + timedelta(seconds=delay) < session_start):
+                hours, rem = divmod(int(remaining.total_seconds()), 3600)
+                minutes = rem // 60
+                print(f"Session can be run after {hours}h {minutes}m (at {session_start:%H:%M}).")
+                if delay is not None:
+                    print(f"-in {_format_duration(delay)} would start before then — use a longer delay, or -w.")
+                print(session_line)
+                return
+            cooldown_ends = session_start
+        else:
+            progress["session_ends_at"] = None
+            progress["next_unlock_at"] = now.isoformat()
+
+    if cooldown_ends is not None:
+        # Once the cooldown resets, the first achievement fires immediately.
+        ready_at = cooldown_ends
+    else:
+        _, est_wait, _ = _estimate_session(
+            achievements, start_from, progress, progress["last_completed"] == -1)
+        if time_only:
+            print(f"{est_wait} {est_duration}")
             return
-        progress["session_ends_at"] = None
-        progress["next_unlock_at"] = datetime.now().isoformat()
+        ready_at = now + timedelta(seconds=est_wait)
 
-    _, est_wait, _ = _estimate_session(
-        achievements, start_from, progress, progress["last_completed"] == -1)
-
-    if time_only:
-        print(f"{est_wait} {est_duration}")
-        return
-
-    if est_wait > 0:
-        run_at = datetime.now() + timedelta(seconds=est_wait)
-        print(f"Session can be run in {_format_duration(est_wait)} (at {run_at:%H:%M}).")
+    if ready_at > now:
+        print(f"Session can be run in {_format_duration((ready_at - now).total_seconds())} "
+              f"(at {ready_at:%H:%M}).")
     else:
         print("Session can be run now.")
+
+    if wait_ready:
+        start_at = max(ready_at, now)
+    elif delay is not None:
+        start_at = now + timedelta(seconds=delay)
+    else:
+        start_at = now
+    if start_at > now:
+        print(f"Starting in {_format_duration((start_at - now).total_seconds())} (at {start_at:%H:%M}).")
 
     if force:
         print(session_line)
@@ -265,9 +291,21 @@ def run(game_name=None, force=False, time_only=False):
     # not before, so declining the prompt above never starts it up.
     caffeinate_proc = start_caffeinate()
     if caffeinate_proc is not None:
-        print(f"Caffeinate activated for {_format_duration(est_wait + est_duration)}.")
+        awake_for = (max(start_at, ready_at) - now).total_seconds() + est_duration
+        print(f"Caffeinate activated for {_format_duration(awake_for)}.")
 
     try:
+        if start_at > datetime.now():
+            print(f"Waiting until {start_at:%H:%M} before starting...")
+            # Short sleeps against the absolute target, so drift can't make
+            # it start late.
+            while (left := (start_at - datetime.now()).total_seconds()) > 0:
+                time.sleep(min(left, 60))
+
+        if cooldown_ends is not None:
+            progress["session_ends_at"] = None
+            progress["next_unlock_at"] = datetime.now().isoformat()
+
         ensure_asf_running()
 
         # Real unlock state from Steam, independent of the config's ordering, so

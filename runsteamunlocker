@@ -9,13 +9,18 @@ ASF_BINARY="$ASF_DIR/ArchiSteamFarm"
 
 show_help() {
     cat <<'EOF'
-Usage: runsteamunlocker [-f] <config-name>
+Usage: runsteamunlocker [-f] [-w | -in <time>] <config-name>
        runsteamunlocker -t <config-name>
        runsteamunlocker [-h | -a | -ls | -c | -j | -k]
 
   <config-name>   Run the unlocker using jsons/config_<config-name>.json.
                   Shows the upcoming session's length and asks to confirm.
   -f, --force     Same as above, but skip the confirmation prompt.
+  -w, --wait      Confirm now, then wait (under caffeinate, without
+                  touching ASF) until the session can run, and start it.
+  -in <time>      Confirm now, then wait <time> before starting, e.g.
+                  30 (minutes), 45m, 2h, 1h30m. Refused if the session's
+                  cooldown would still be running by then.
   -t, --time      Print "<wait_seconds> <duration_seconds>" for the next
                   session and exit, without running or touching ASF.
   -k, --kill      Stop ArchiSteamFarm and any running unlocker session.
@@ -67,12 +72,36 @@ kill_all() {
 
 force=0
 time_only=0
-if [ "${1-}" = "-f" ] || [ "${1-}" = "--force" ]; then
-    force=1
-    shift
-elif [ "${1-}" = "-t" ] || [ "${1-}" = "--time" ]; then
-    time_only=1
-    shift
+wait_ready=0
+delay=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -f|--force) force=1; shift ;;
+        -t|--time) time_only=1; shift ;;
+        -w|--wait) wait_ready=1; shift ;;
+        -in|--in)
+            if [ "$#" -lt 2 ]; then
+                echo "-in needs a time, e.g. 30, 45m, 2h, 1h30m" >&2
+                exit 1
+            fi
+            delay="$2"
+            if ! [[ "$delay" =~ ^([0-9]+|([0-9]+h)?([0-9]+m)?([0-9]+s)?)$ ]] || [ -z "$delay" ]; then
+                echo "-in needs a time, e.g. 30, 45m, 2h, 1h30m (got '$delay')" >&2
+                exit 1
+            fi
+            shift 2
+            ;;
+        *) break ;;
+    esac
+done
+
+if [ "$wait_ready" -eq 1 ] && [ -n "$delay" ]; then
+    echo "Use either -w or -in, not both." >&2
+    exit 1
+fi
+if [ "$time_only" -eq 1 ] && { [ "$force" -eq 1 ] || [ "$wait_ready" -eq 1 ] || [ -n "$delay" ]; }; then
+    echo "-t can't be combined with -f, -w or -in." >&2
+    exit 1
 fi
 
 if [ "$#" -gt 1 ]; then
@@ -116,12 +145,11 @@ case "${1-}" in
             echo "Available: $(list_configs | tr '\n' ' ')" >&2
             exit 1
         fi
-        if [ "$time_only" -eq 1 ]; then
-            exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "$name" --time
-        elif [ "$force" -eq 1 ]; then
-            exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "$name" --force
-        else
-            exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "$name"
-        fi
+        py_args=("$name")
+        [ "$time_only" -eq 1 ] && py_args+=(--time)
+        [ "$force" -eq 1 ] && py_args+=(--force)
+        [ "$wait_ready" -eq 1 ] && py_args+=(--wait)
+        [ -n "$delay" ] && py_args+=(--in "$delay")
+        exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" "${py_args[@]}"
         ;;
 esac
