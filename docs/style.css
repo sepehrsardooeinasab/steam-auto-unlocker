@@ -518,6 +518,18 @@
     margin-left: auto;
   }
   .folder-status b { color: var(--accent-strong); }
+  .forget-folder {
+    margin-left: 0.3rem;
+    padding: 0 0.25rem;
+    border: none;
+    background: transparent;
+    color: var(--box-text-dim);
+    font: inherit;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .forget-folder:hover { color: var(--danger); }
 
   details.hint { margin-top: 0.8rem; font-size: 0.82rem; color: var(--box-text-dim); }
   details.hint summary { cursor: pointer; color: var(--accent-strong); font-weight: 600; }

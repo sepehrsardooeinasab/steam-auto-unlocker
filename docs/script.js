@@ -266,30 +266,22 @@
     return {sessions: sessions, gaps: gaps, durations: durations, originals: originals};
   }
 
-  // "15m", "1h30m", "2d", "90s", "1h 5m"; a bare number means minutes
-  // (same as runsteamunlocker -in). Returns seconds, or null if invalid.
+  // Seconds ("90"), or "15m", "1h30m", "2d", "1h 5m". Returns seconds, or
+  // null if invalid.
   function parseDelayInput(text) {
     var t = String(text).toLowerCase().replace(/\s+/g, "");
-    if (/^\d+$/.test(t)) return parseInt(t, 10) * 60;
+    if (/^\d+$/.test(t)) return parseInt(t, 10);
     var m = t.match(/^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
     if (!t || !m) return null;
     return (parseInt(m[1] || 0, 10) * 86400) + (parseInt(m[2] || 0, 10) * 3600) +
       (parseInt(m[3] || 0, 10) * 60) + parseInt(m[4] || 0, 10);
   }
 
-  // Exact, editable form of a delay: 3725 -> "1h2m5s".
-  function formatDelayInput(seconds) {
-    var d = Math.floor(seconds / 86400), h = Math.floor(seconds % 86400 / 3600);
-    var m = Math.floor(seconds % 3600 / 60), s = seconds % 60;
-    var out = (d ? d + "d" : "") + (h ? h + "h" : "") + (m ? m + "m" : "") + (s ? s + "s" : "");
-    return out || "0s";
-  }
-
   function isLabelRow(row) {
     return row[3] === "";
   }
 
-  // targets/edits/originals (optional) make delay cells clickable to edit,
+  // targets/edits/originals (optional) make delay_s cells clickable to edit,
   // highlighting edited ones with an undo button.
   function rowsToTable(rows, targets, edits, originals) {
     var head = rows[0];
@@ -300,13 +292,13 @@
 
     function delayCell(r, ri) {
       var id = targets && targets[ri + 1];
-      if (!id) return "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>";
+      if (!id) return "<td>" + escapeHtml(r[CSV_DELAY_COL + 1]) + "</td>";
       var edited = id in edits;
       var title = edited
-        ? "Edited (was " + formatDelayInput(originals[id]) + ") — click to change"
+        ? "Edited (was " + originals[id] + "s) — click to change"
         : "Click to edit this delay";
       return '<td class="delay-cell editable' + (edited ? " edited" : "") + '" data-id="' + escapeHtml(id) +
-        '" title="' + escapeHtml(title) + '">' + escapeHtml(r[CSV_DELAY_COL]) +
+        '" title="' + escapeHtml(title) + '">' + escapeHtml(r[CSV_DELAY_COL + 1]) +
         (edited ? '<button class="undo-edit" type="button" data-undo="' + escapeHtml(id) + '" title="Undo this edit">↺</button>' : "") +
         "</td>";
     }
@@ -315,10 +307,10 @@
       if (isLabelRow(r)) {
         var cls = /^Gap/.test(r[0]) ? "gap-row" : /^Copied from:/.test(r[0]) ? "meta-row" : "session-row";
         html += '<tr class="' + cls + '"><td colspan="' + CSV_DELAY_COL + '">' + escapeHtml(r[0]) + "</td>" +
-          delayCell(r, ri) + "<td>" + escapeHtml(r[CSV_DELAY_COL + 1]) + "</td></tr>";
+          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + "</tr>";
       } else {
         html += "<tr>" + r.slice(0, CSV_DELAY_COL).map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") +
-          delayCell(r, ri) + "<td>" + escapeHtml(r[CSV_DELAY_COL + 1]) + "</td></tr>";
+          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + "</tr>";
       }
     });
     html += "</tbody></table></div>";
@@ -354,7 +346,6 @@
     resetBtn: document.getElementById("reset-btn"),
     downloadBtn: document.getElementById("download-btn"),
     folderBtn: document.getElementById("folder-btn"),
-    forgetFolderBtn: document.getElementById("forget-folder-btn"),
     folderStatus: document.getElementById("folder-status"),
     boxTitle: document.getElementById("box-title"),
     statsStrip: document.getElementById("stats-strip"),
@@ -390,6 +381,9 @@
   // Two-click confirmations: key -> time until which the second click counts.
   var armedUntil = {};
   var ARM_MS = 4000;
+  // The "pasted text is locked" notice shows only after clicking the locked
+  // text box, until the next click elsewhere.
+  var showLockNotice = false;
   var dirHandle = null;
 
   function showToast(msg) {
@@ -558,12 +552,12 @@
 
   function editsBannerHtml() {
     var n = editCount();
-    if (!n) return "";
+    if (!n || !showLockNotice) return "";
     var label = isArmed("discard")
       ? "Click again to discard " + n + " edit" + (n === 1 ? "" : "s")
       : "Discard edits";
     return '<div class="notice info edits-banner"><span>' + n + " delay" + (n === 1 ? "" : "s") +
-      " edited in Timeline. The pasted text is locked until you download or discard them.</span>" +
+      " edited in Timeline, so the pasted text is locked until you download or discard them.</span>" +
       '<button class="btn-ghost discard-edits' + (isArmed("discard") ? " armed" : "") + '" type="button">' + label + "</button></div>";
   }
 
@@ -620,7 +614,7 @@
     }
 
     var warningsHtml = dangerHtml + latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("") +
-      (fileKey === "csv" ? editsBannerHtml() || noticeHtml("info", "Click a delay to change it, e.g. 15m, 1h30m, 2d, 90s (a bare number means minutes).") : "");
+      (fileKey === "csv" ? noticeHtml("info", "Click a delay_s value to change it, in seconds (or e.g. 15m, 1h30m, 2d).") : "");
 
     if (fileKey === "json") {
       slot.innerHTML = warningsHtml + '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>";
@@ -662,7 +656,7 @@
     armedUntil = {};
     try { localStorage.removeItem("unlock-scheduler-draft"); } catch (e) {}
     recompute();
-    render();
+    setView("input");
   }
 
   els.resetBtn.addEventListener("click", function () {
@@ -690,8 +684,8 @@
     var input = document.createElement("input");
     input.type = "text";
     input.className = "delay-input";
-    input.value = formatDelayInput(currentDelay(id));
-    input.placeholder = "e.g. 15m";
+    input.value = currentDelay(id);
+    input.placeholder = "seconds";
     cell.textContent = "";
     cell.appendChild(input);
     input.focus();
@@ -704,7 +698,7 @@
       if (!save) { render(); return; }
       var seconds = parseDelayInput(input.value);
       if (seconds === null) {
-        showToast("Use a time like 15m, 1h30m, 2d or 90s");
+        showToast("Use seconds like 90, or a time like 15m, 1h30m, 2d");
         render();
         return;
       }
@@ -731,13 +725,25 @@
       edits = {};
       saveDraft();
       recompute();
-      render();
+      setView("input");
       showToast("Edits discarded");
       return;
     }
     var cell = e.target.closest("td.delay-cell.editable");
     if (cell && !cell.querySelector("input")) startEditing(cell);
+    if (showLockNotice && e.target !== els.exportText && !e.target.closest(".edits-banner")) {
+      showLockNotice = false;
+      render();
+    }
   });
+
+  function noticeLocked() {
+    if (!editCount() || showLockNotice) return;
+    showLockNotice = true;
+    render();
+  }
+  els.exportText.addEventListener("click", noticeLocked);
+  els.exportText.addEventListener("focus", noticeLocked);
 
   // ---- collapsible side panels ----
   function wireCollapse(buttonId, panelId, storageKey) {
@@ -806,8 +812,10 @@
 
   function setFolder(handle) {
     dirHandle = handle;
-    els.folderStatus.innerHTML = handle ? 'Saving to <b>' + escapeHtml(handle.name) + "/</b>" : "";
-    els.forgetFolderBtn.style.display = handle ? "inline-block" : "none";
+    els.folderStatus.innerHTML = handle
+      ? 'Saving to <b>' + escapeHtml(handle.name) + '/</b><button class="forget-folder" type="button" ' +
+        'title="Stop saving here (use normal downloads)" aria-label="Forget save folder">×</button>'
+      : "";
   }
 
   // The chosen folder survives reloads and new windows by keeping its
@@ -907,10 +915,11 @@
         showToast("Folder selected — downloads will save there silently");
       }).catch(function () { /* user cancelled, or blocked (e.g. inside a sandboxed iframe) */ });
     });
-    els.forgetFolderBtn.addEventListener("click", function () {
+    els.folderStatus.addEventListener("click", function (e) {
+      if (!e.target.closest(".forget-folder")) return;
       setFolder(null);
       storeFolderHandle(null);
-      showToast("Save folder forgotten");
+      showToast("Save folder forgotten — downloads go to your browser's default");
     });
     loadFolderHandle().then(function (handle) { if (handle) setFolder(handle); });
   }
