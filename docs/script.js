@@ -125,16 +125,26 @@
     });
   }
 
-  function splitSessions(items, gapLimit, cumulativeLimit) {
+  // breaks (optional) holds manual gap overrides from the Timeline tab:
+  // {ach_id: true} starts a new session at that achievement, {ach_id: false}
+  // keeps it in the current one, whatever the limits say. autoBreaks reports
+  // what the limits alone would decide at each achievement (given the
+  // splits before it), so the UI can tell which gaps are manual.
+  function splitSessions(items, gapLimit, cumulativeLimit, breaks) {
     var sessions = [], current = [], initialDelays = [], durations = [], cumulative = 0;
+    var autoBreaks = {};
+    breaks = breaks || {};
 
     items.forEach(function (ach) {
       var delay = ach.delay;
 
-      if (delay > gapLimit && current.length) {
-        sessions.push(current); durations.push(cumulative); current = []; cumulative = 0;
-      } else if (cumulative + delay > cumulativeLimit && current.length) {
-        sessions.push(current); durations.push(cumulative); current = []; cumulative = 0;
+      if (current.length) {
+        var key = String(ach.ach_id);
+        var auto = delay > gapLimit || cumulative + delay > cumulativeLimit;
+        autoBreaks[key] = auto;
+        if (key in breaks ? breaks[key] : auto) {
+          sessions.push(current); durations.push(cumulative); current = []; cumulative = 0;
+        }
       }
 
       if (current.length === 0) {
@@ -148,7 +158,7 @@
 
     if (current.length) { sessions.push(current); durations.push(cumulative); }
     var gaps = sessions.length > 1 ? initialDelays.slice(1) : [];
-    return {sessions: sessions, gaps: gaps, durations: durations};
+    return {sessions: sessions, gaps: gaps, durations: durations, autoBreaks: autoBreaks};
   }
 
   function buildConfig(appid, sessions, gaps, copiedFrom) {
@@ -214,33 +224,40 @@
   // gap row — the next session's first achievement, which is where the
   // config keeps that gap. A session's first achievement has no delay of
   // its own (always 0), so it isn't editable itself.
+  //
+  // gapActions[i] is {id, kind} for rows that can gain or lose a gap:
+  // "remove" on a gap row, "add" on any achievement row but the very first.
   var CSV_DELAY_COL = 5;
   function buildCsvRows(sessions, gaps, durations, copiedFrom) {
     var rows = [["session", "#", "achievement", "id", "unlock_time", "delay", "delay_s"]];
-    var targets = [null];
+    var targets = [null], gapActions = [null];
     if (copiedFrom) {
       rows.push(["Copied from: " + copiedFrom, "", "", "", "", "", ""]);
       targets.push(null);
+      gapActions.push(null);
     }
     sessions.forEach(function (session, i) {
       if (i > 0) {
         rows.push(["Gap before session " + (i + 1), "", "", "", "", roughDurationCsv(gaps[i - 1]), gaps[i - 1]]);
         targets.push(String(session[0].ach_id));
+        gapActions.push({id: String(session[0].ach_id), kind: "remove"});
       }
       rows.push(["Session " + (i + 1) + " (" + session.length + " achievement" + (session.length === 1 ? "" : "s") + ")",
         "", "", "", "", roughDurationCsv(durations[i]), durations[i]]);
       targets.push(null);
+      gapActions.push(null);
       session.forEach(function (a, j) {
         rows.push([i + 1, j + 1, a.ach_name, a.ach_id, formatUnlockTime(a.unlock_time), roughDurationCsv(a.delay), a.delay]);
         targets.push(j > 0 ? String(a.ach_id) : null);
+        gapActions.push(j > 0 ? {id: String(a.ach_id), kind: "add"} : null);
       });
     });
-    return {rows: rows, targets: targets};
+    return {rows: rows, targets: targets, gapActions: gapActions};
   }
 
   // Applies manual delay edits ({ach_id: seconds}) on top of an already-split
-  // schedule. Sessions stay exactly as split from the real timestamps — an
-  // edit only changes timing, never which session an achievement is in.
+  // schedule. A delay edit only changes timing, never which session an
+  // achievement is in — only an added/removed gap (breaks) does that.
   // Returns the edited split plus originals ({ach_id: seconds}) for every
   // editable delay, so the UI can show/undo what changed.
   function applyEdits(split, edits) {
@@ -263,7 +280,7 @@
     var durations = sessions.map(function (session) {
       return session.reduce(function (t, a) { return t + a.delay; }, 0);
     });
-    return {sessions: sessions, gaps: gaps, durations: durations, originals: originals};
+    return {sessions: sessions, gaps: gaps, durations: durations, autoBreaks: split.autoBreaks, originals: originals};
   }
 
   // Whole seconds. Returns null if invalid.
@@ -276,21 +293,24 @@
     return row[3] === "";
   }
 
-  // targets/edits/originals (optional) make delay_s cells clickable to edit,
-  // highlighting edited ones with an undo button.
-  function rowsToTable(rows, targets, edits, originals) {
+  // ui (optional) = {targets, gapActions, edits, originals, breaks,
+  // autoBreaks} makes delay_s cells clickable to edit (edited ones are
+  // highlighted with an undo button) and adds a column of add/remove-gap
+  // buttons.
+  function rowsToTable(rows, ui) {
     var head = rows[0];
     var body = rows.slice(1);
     var html = '<div class="table-wrap"><table class="csv-table"><thead><tr>';
     head.forEach(function (h) { html += "<th>" + escapeHtml(h) + "</th>"; });
+    if (ui) html += "<th></th>";
     html += "</tr></thead><tbody>";
 
     function delayCell(r, ri) {
-      var id = targets && targets[ri + 1];
+      var id = ui && ui.targets[ri + 1];
       if (!id) return "<td>" + escapeHtml(r[CSV_DELAY_COL + 1]) + "</td>";
-      var edited = id in edits;
+      var edited = id in ui.edits;
       var title = edited
-        ? "Edited (was " + originals[id] + "s) — click to change"
+        ? "Edited (was " + ui.originals[id] + "s) — click to change"
         : "Click to edit this delay";
       return '<td class="delay-cell editable' + (edited ? " edited" : "") + '" data-id="' + escapeHtml(id) +
         '" title="' + escapeHtml(title) + '">' + escapeHtml(r[CSV_DELAY_COL + 1]) +
@@ -298,14 +318,30 @@
         "</td>";
     }
 
+    // A gap is manual when it differs from what the limits would decide:
+    // an added gap shows highlighted "− gap", a removed one "+ gap".
+    function gapCell(ri) {
+      if (!ui) return "";
+      var act = ui.gapActions[ri + 1];
+      if (!act) return "<td></td>";
+      var manual = act.id in ui.breaks && ui.breaks[act.id] !== ui.autoBreaks[act.id];
+      var add = act.kind === "add";
+      var title = add
+        ? (manual ? "A gap was removed here — click to put it back" : "Start a new session at this achievement")
+        : (manual ? "You added this gap — click to remove it" : "Remove this gap (merge into the previous session)");
+      return '<td class="gap-action"><button class="gap-btn' + (manual ? " edited" : "") + '" type="button" data-gap="' +
+        escapeHtml(act.id) + '" data-kind="' + act.kind + '" title="' + escapeHtml(title) + '">' +
+        (add ? "+ gap" : "− gap") + "</button></td>";
+    }
+
     body.forEach(function (r, ri) {
       if (isLabelRow(r)) {
         var cls = /^Gap/.test(r[0]) ? "gap-row" : /^Copied from:/.test(r[0]) ? "meta-row" : "session-row";
         html += '<tr class="' + cls + '"><td colspan="' + CSV_DELAY_COL + '">' + escapeHtml(r[0]) + "</td>" +
-          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + "</tr>";
+          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + gapCell(ri) + "</tr>";
       } else {
         html += "<tr>" + r.slice(0, CSV_DELAY_COL).map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") +
-          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + "</tr>";
+          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + gapCell(ri) + "</tr>";
       }
     });
     html += "</tbody></table></div>";
@@ -369,10 +405,12 @@
   };
 
   var currentView = "input";
-  var latest = null; // { errors, warnings, config, jsonText, csvText, csvRows, csvTargets, originals, filenames, stats }
-  // Manual delay edits from the Timeline tab: {ach_id: seconds}. While any
+  var latest = null; // { errors, warnings, config, jsonText, csvText, csvRows, csvTargets, gapActions, originals, autoBreaks, filenames, stats }
+  // Manual edits from the Timeline tab: delays ({ach_id: seconds}) and
+  // added/removed gaps ({ach_id: true|false}, see splitSessions). While any
   // exist, the pasted text is locked (changing it would orphan them).
   var edits = {};
+  var breaks = {};
   // Two-click confirmations: key -> time until which the second click counts.
   var armedUntil = {};
   var ARM_MS = 4000;
@@ -420,7 +458,8 @@
         gapLimit: els.gapLimit.value,
         cumLimit: els.cumLimit.value,
         minGap: els.minGap.value,
-        edits: edits
+        edits: edits,
+        breaks: breaks
       }));
     } catch (e) {}
   }
@@ -438,6 +477,7 @@
       if (d.cumLimit) els.cumLimit.value = d.cumLimit;
       if (d.minGap) els.minGap.value = d.minGap;
       if (d.edits && typeof d.edits === "object") edits = d.edits;
+      if (d.breaks && typeof d.breaks === "object") breaks = d.breaks;
     } catch (e) {}
   }
 
@@ -468,7 +508,7 @@
     });
     var simultaneous = Object.keys(timeMap).filter(function (t) { return timeMap[t].length > 1; });
 
-    var split = applyEdits(splitSessions(withDelays, gapLimitSec, cumLimitSec), edits);
+    var split = applyEdits(splitSessions(withDelays, gapLimitSec, cumLimitSec, breaks), edits);
     var config = buildConfig(appidVal, split.sessions, split.gaps, copiedFrom);
 
     // Unlike the warnings below, a re-sorted paste makes every ach_id
@@ -484,9 +524,11 @@
     });
     split.sessions.forEach(function (session, si) {
       session.forEach(function (a, j) {
-        if (j > 0 && String(a.ach_id) in edits && a.delay > gapLimitSec) {
-          warnings.push(a.ach_name + " (session " + (si + 1) + ") is edited to wait " + roughDuration(a.delay) +
-            ", longer than your session gap limit. It stays in session " + (si + 1) + ", so the game keeps running in ASF the whole time.");
+        var key = String(a.ach_id);
+        if (j > 0 && (key in edits || breaks[key] === false) && a.delay > gapLimitSec) {
+          warnings.push(a.ach_name + " (session " + (si + 1) + ") waits " + roughDuration(a.delay) +
+            " after your edits, longer than your session gap limit. It stays in session " + (si + 1) +
+            ", so the game keeps running in ASF the whole time.");
         }
       });
     });
@@ -506,7 +548,9 @@
       csvText: toCsv(csv.rows),
       csvRows: csv.rows,
       csvTargets: csv.targets,
+      gapActions: csv.gapActions,
       originals: split.originals,
+      autoBreaks: split.autoBreaks,
       filenames: {
         json: "config" + suffix + ".json",
         csv: (gameName || "default") + ".csv"
@@ -528,7 +572,7 @@
   }
 
   function editCount() {
-    return Object.keys(edits).length;
+    return Object.keys(edits).length + Object.keys(breaks).length;
   }
 
   function isArmed(key) {
@@ -551,8 +595,8 @@
     var label = isArmed("discard")
       ? "Click again to discard " + n + " edit" + (n === 1 ? "" : "s")
       : "Discard edits";
-    return '<div class="notice info edits-banner"><span>' + n + " delay" + (n === 1 ? "" : "s") +
-      " edited in Timeline, so the pasted text is locked until you download or discard them.</span>" +
+    return '<div class="notice info edits-banner"><span>' + n + " Timeline edit" + (n === 1 ? "" : "s") +
+      ", so the pasted text is locked until you download or discard " + (n === 1 ? "it" : "them") + ".</span>" +
       '<button class="btn-ghost discard-edits' + (isArmed("discard") ? " armed" : "") + '" type="button">' + label + "</button></div>";
   }
 
@@ -609,12 +653,15 @@
     }
 
     var warningsHtml = dangerHtml + latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("") +
-      (fileKey === "csv" ? noticeHtml("info", "Click a delay_s value to change it (in seconds).") : "");
+      (fileKey === "csv" ? noticeHtml("info", "Click a delay_s value to change it (in seconds). Use + gap to start a new session at an achievement, − gap to remove a gap.") : "");
 
     if (fileKey === "json") {
       slot.innerHTML = warningsHtml + '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>";
     } else {
-      slot.innerHTML = warningsHtml + rowsToTable(latest.csvRows, latest.csvTargets, edits, latest.originals);
+      slot.innerHTML = warningsHtml + rowsToTable(latest.csvRows, {
+        targets: latest.csvTargets, gapActions: latest.gapActions, edits: edits,
+        originals: latest.originals, breaks: breaks, autoBreaks: latest.autoBreaks
+      });
     }
   }
 
@@ -648,6 +695,7 @@
     els.exportText.value = "";
     resetSettingFields();
     edits = {};
+    breaks = {};
     armedUntil = {};
     try { localStorage.removeItem("unlock-scheduler-draft"); } catch (e) {}
     recompute();
@@ -706,7 +754,22 @@
     input.addEventListener("blur", function () { finish(true); });
   }
 
+  // Adds (on=true) or removes a gap before achievement id. Matching what
+  // the limits would decide anyway just drops the override.
+  function setBreak(id, on) {
+    if (latest && latest.autoBreaks && latest.autoBreaks[id] === on) delete breaks[id];
+    else breaks[id] = on;
+    saveDraft();
+    recompute();
+    render();
+  }
+
   document.addEventListener("click", function (e) {
+    var gapBtn = e.target.closest(".gap-btn");
+    if (gapBtn) {
+      setBreak(gapBtn.getAttribute("data-gap"), gapBtn.getAttribute("data-kind") === "add");
+      return;
+    }
     var undo = e.target.closest(".undo-edit");
     if (undo) {
       delete edits[undo.getAttribute("data-undo")];
@@ -718,6 +781,7 @@
     if (e.target.closest(".discard-edits")) {
       if (!confirmTwice("discard")) return;
       edits = {};
+      breaks = {};
       saveDraft();
       recompute();
       setView("input");
