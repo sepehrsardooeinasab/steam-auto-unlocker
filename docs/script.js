@@ -762,6 +762,12 @@
     saveDraft();
     recompute();
     render();
+    // A new gap starts as the achievement's old delay; open its duration
+    // for editing right away.
+    if (on) {
+      var cell = document.querySelector('tr.gap-row td.delay-cell.editable[data-id="' + id.replace(/["\\]/g, "\\$&") + '"]');
+      if (cell) startEditing(cell);
+    }
   }
 
   document.addEventListener("click", function (e) {
