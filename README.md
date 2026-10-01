@@ -60,6 +60,14 @@ source "/path/to/steam-auto-unlocker/runsteamunlocker.zsh-completion"
 
 Put these lines in `~/.zshrc` — or, if you use oh-my-zsh, in a file under `~/.oh-my-zsh/custom/` instead, since anything there is auto-sourced. The completion script is zsh-specific; skip the `source` line under bash.
 
+### 5. Notifications (optional)
+
+The unlocker sends a desktop notification when a session finishes, when every achievement is done, and when a run stops unexpectedly: an ASF error, a crash, or the terminal being closed. Stopping it yourself with Ctrl-C or `-k` doesn't send one. Notifications never affect a run. If no notification tool is available, they're skipped.
+
+- **macOS, full version:** `brew install terminal-notifier`. Notifications show the game name as a subtitle and the project logo. Errors use a different sound ("Basso" instead of "Glass"). "Done" notifications remove themselves after 30 minutes, while errors stay until you dismiss them.
+- **macOS, basic (no install):** if `terminal-notifier` isn't installed, a plain notification is shown through `osascript`, with no logo and no auto-removal. If nothing appears, allow notifications for **Script Editor** in System Settings → Notifications.
+- **Linux:** needs `notify-send`. Install `libnotify-bin` on Debian/Ubuntu, or `libnotify` on Fedora/Arch. Errors are marked critical. "Done" notifications ask to expire after 30 minutes, though some desktops (e.g. GNOME) ignore that. Sounds depend on your desktop.
+
 ## Layout
 
 - `unlocker/` — the Python package that drives unlocking:
@@ -71,6 +79,7 @@ Put these lines in `~/.zshrc` — or, if you use oh-my-zsh, in a file under `~/.
 - `runsteamunlocker.zsh-completion` — tab-completion for available configs
 - `docs/` — the Unlock Scheduler web page (published via GitHub Pages)
 - `jsons/`, `csvs/`, `archifarm/` — per-machine runtime data (ASF install, bot credentials, generated configs); gitignored, not part of the repo
+- `completed/` — finished games: each game's config and CSV are moved to `completed/<name>/` once every achievement is unlocked (gitignored)
 
 ## Usage
 
@@ -80,6 +89,8 @@ runsteamunlocker -f <config-name>   # same, but skip the confirmation prompt
 runsteamunlocker -w <config-name>   # confirm now, wait until the session can run, then start it
 runsteamunlocker -in 2h <config-name>  # confirm now, start in 2h (also 30, 45m, 1h30m)
 runsteamunlocker -t <config-name>   # print the next session's wait/duration and exit, without running
+runsteamunlocker -s <config-name>   # show achievements from the current session onward (names, done/next)
+runsteamunlocker -s <config-name> all  # every session; or a number for just that session
 runsteamunlocker -k                 # stop ArchiSteamFarm and any running unlocker session
 runsteamunlocker -a                 # list available jsons/config_*.json profiles
 runsteamunlocker -j                 # open the Unlock Scheduler (docs/index.html) in the browser

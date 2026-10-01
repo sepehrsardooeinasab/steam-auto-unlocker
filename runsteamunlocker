@@ -11,6 +11,7 @@ show_help() {
     cat <<'EOF'
 Usage: runsteamunlocker [-f] [-w | -in <time>] <config-name>
        runsteamunlocker -t <config-name>
+       runsteamunlocker -s <config-name> [all | <session-number>]
        runsteamunlocker [-h | -a | -ls | -c | -j | -k]
 
   <config-name>   Run the unlocker using jsons/config_<config-name>.json.
@@ -29,6 +30,10 @@ Usage: runsteamunlocker [-f] [-w | -in <time>] <config-name>
   -ls, --status   List every profile's next session (number, length,
                   achievement count) and when it can run, without
                   running anything or touching ASF.
+  -s, --show      Show a game's achievements session by session, with
+                  names from its CSV and what's done / next. Defaults to
+                  the current session onward; "all" shows every session,
+                  a number just that one. Works for finished games too.
   -c              Open the project in VS Code.
   -j              Open the JSON/unlock scheduler builder.
 EOF
@@ -102,6 +107,10 @@ fi
 if [ "$time_only" -eq 1 ] && { [ "$force" -eq 1 ] || [ "$wait_ready" -eq 1 ] || [ -n "$delay" ]; }; then
     echo "-t can't be combined with -f, -w or -in." >&2
     exit 1
+fi
+
+if [ "${1-}" = "-s" ] || [ "${1-}" = "--show" ]; then
+    exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" --show "${@:2}"
 fi
 
 if [ "$#" -gt 1 ]; then

@@ -74,6 +74,63 @@ def stop_caffeinate(proc):
     proc.wait()
 
 
+NOTIFY_TITLE = "Steam unlocker"
+NOTIFY_ICON = PROJECT_ROOT / "docs" / "logo.png"
+NOTIFY_REMOVE_AFTER = 1800  # "done" notifications clear themselves after 30 min
+
+
+def notify(game, message, error=False):
+    """Desktop notification: title "Steam unlocker", the game as subtitle,
+    a different sound for errors. Uses the best tool available and quietly
+    does nothing when there's none — a missing tool never affects a run.
+
+    - macOS + terminal-notifier (brew): project logo, and non-error
+      notifications are removed again after NOTIFY_REMOVE_AFTER.
+    - macOS without it: plain osascript notification (no logo, stays in
+      Notification Center).
+    - Linux + notify-send: logo; errors are marked critical, others ask to
+      expire after NOTIFY_REMOVE_AFTER (some desktops ignore that)."""
+    icon = str(NOTIFY_ICON) if NOTIFY_ICON.exists() else None
+    try:
+        if sys.platform == "darwin" and shutil.which("terminal-notifier"):
+            group = f"steam-unlocker-{game}-{time.time_ns()}"
+            cmd = ["terminal-notifier", "-title", NOTIFY_TITLE, "-subtitle", game,
+                   "-message", message, "-sound", "Basso" if error else "Glass", "-group", group]
+            if icon:
+                cmd += ["-contentImage", icon]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            if not error:
+                subprocess.Popen(
+                    [sys.executable, "-c",
+                     f"import time, subprocess; time.sleep({NOTIFY_REMOVE_AFTER}); "
+                     f"subprocess.run(['terminal-notifier', '-remove', {group!r}], timeout=30)"],
+                    start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif sys.platform == "darwin":
+            # Passed as argv rather than spliced into the script, so quotes
+            # in achievement/game names can't break the AppleScript.
+            subprocess.run(
+                ["osascript",
+                 "-e", "on run argv",
+                 "-e", "display notification (item 3 of argv) with title (item 1 of argv) "
+                       "subtitle (item 2 of argv) sound name (item 4 of argv)",
+                 "-e", "end run",
+                 NOTIFY_TITLE, game, message, "Basso" if error else "Glass"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        elif shutil.which("notify-send"):
+            cmd = ["notify-send", "-a", NOTIFY_TITLE,
+                   "-h", f"string:sound-name:{'dialog-error' if error else 'complete'}"]
+            if error:
+                cmd += ["-u", "critical"]
+            else:
+                cmd += ["-t", str(NOTIFY_REMOVE_AFTER * 1000)]
+            if icon:
+                cmd += ["-i", icon]
+            cmd += [f"{NOTIFY_TITLE} · {game}", message]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def schedule_asf_kill(delay_seconds=60):
     """Detached background timer: force-kills ArchiSteamFarm (same as
     runsteamunlocker's own `pkill -f`) after delay_seconds, regardless of

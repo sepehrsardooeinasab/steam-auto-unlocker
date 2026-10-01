@@ -421,7 +421,62 @@
     background: var(--info-bg);
     color: var(--info);
     font-style: italic;
-    text-align: center;
+  }
+  table.csv-table tr.meta-row td {
+    color: var(--box-text-dim);
+    font-style: italic;
+  }
+  table.csv-table tr.session-row td {
+    background: var(--box-bg-alt);
+    font-weight: 700;
+    border-top: 2px solid var(--box-border);
+  }
+
+  td.delay-cell.editable {
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+  td.delay-cell.editable:hover { color: var(--accent-strong); }
+  table.csv-table td.delay-cell.edited,
+  table.csv-table tr.gap-row td.delay-cell.edited,
+  table.csv-table tr.session-row td.delay-cell.edited {
+    background: var(--warn-bg);
+    color: var(--warn);
+    font-weight: 700;
+    font-style: normal;
+  }
+  .undo-edit {
+    margin-left: 0.4rem;
+    padding: 0 0.3rem;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: 1.3;
+    cursor: pointer;
+  }
+  .delay-input {
+    width: 7rem;
+    padding: 0.15rem 0.35rem;
+    font: inherit;
+  }
+  .edits-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+  }
+  .edits-banner .discard-edits { flex: none; }
+  button.armed {
+    border-color: var(--danger) !important;
+    color: var(--danger) !important;
+  }
+  textarea.locked {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .box-footer {

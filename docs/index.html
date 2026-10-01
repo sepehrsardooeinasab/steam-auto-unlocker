@@ -79,6 +79,11 @@ Description text
               <input type="text" id="game-name" placeholder="CS2" value="CS2">
             </div>
           </div>
+          <div class="field">
+            <label for="copied-from">Copied from (optional)</label>
+            <input type="text" id="copied-from" placeholder="SteamHunters name, Steam ID or profile URL">
+            <small>Whose achievements were copied. Saved in the config and CSV; leave empty to skip.</small>
+          </div>
           <div class="row2">
             <div class="field">
               <label for="gap-limit">Gap limit (hours)</label>
@@ -107,14 +112,8 @@ Description text
         <div class="view-pane" data-view="json">
           <div id="json-slot"></div>
         </div>
-        <div class="view-pane" data-view="csv-merged">
-          <div id="csv-merged-slot"></div>
-        </div>
-        <div class="view-pane" data-view="csv-sessions">
-          <div id="csv-sessions-slot"></div>
-        </div>
-        <div class="view-pane" data-view="csv-summary">
-          <div id="csv-summary-slot"></div>
+        <div class="view-pane" data-view="csv">
+          <div id="csv-slot"></div>
         </div>
       </div>
 
@@ -139,17 +138,9 @@ Description text
         <span class="icon"><svg viewBox="0 0 20 20"><text x="10" y="14.5" text-anchor="middle" font-size="12" font-family="'JetBrains Mono',monospace" fill="currentColor">{ }</text></svg></span>
         <span class="label">Schedule</span>
       </button>
-      <button class="nav-item" id="nav-csv-merged" type="button" title="Full Timeline (merged.csv)">
+      <button class="nav-item" id="nav-csv" type="button" title="Timeline (csv)">
         <span class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><line x1="2.5" y1="8.5" x2="17.5" y2="8.5"/><line x1="2.5" y1="12.5" x2="17.5" y2="12.5"/><line x1="8" y1="4" x2="8" y2="16"/></svg></span>
-        <span class="label">Full Timeline</span>
-      </button>
-      <button class="nav-item" id="nav-csv-sessions" type="button" title="Sessions (sessions.csv)">
-        <span class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><line x1="2.5" y1="8.5" x2="17.5" y2="8.5"/><line x1="2.5" y1="12.5" x2="17.5" y2="12.5"/><line x1="8" y1="4" x2="8" y2="16"/></svg></span>
-        <span class="label">Sessions</span>
-      </button>
-      <button class="nav-item" id="nav-csv-summary" type="button" title="Session Summary (summary_session.csv)">
-        <span class="icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><line x1="2.5" y1="8.5" x2="17.5" y2="8.5"/><line x1="2.5" y1="12.5" x2="17.5" y2="12.5"/><line x1="8" y1="4" x2="8" y2="16"/></svg></span>
-        <span class="label">Summary</span>
+        <span class="label">Timeline</span>
       </button>
     </div>
   </nav>
