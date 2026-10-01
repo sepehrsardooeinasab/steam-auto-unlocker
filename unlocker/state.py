@@ -1,8 +1,13 @@
 import sys
 import json
+import shutil
+from datetime import datetime
 from pathlib import Path
 
-JSONS_DIR = Path(__file__).resolve().parent.parent / "jsons"
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+JSONS_DIR = PROJECT_DIR / "jsons"
+CSVS_DIR = PROJECT_DIR / "csvs"
+COMPLETED_DIR = PROJECT_DIR / "completed"
 
 DEFAULT_PROGRESS = {
     "appid": 0,
@@ -60,7 +65,31 @@ def save_progress(path, progress):
     path.write_text(json.dumps(progress, indent=2))
 
 
-def cleanup_profile(config_path, progress_path):
-    config_path.unlink(missing_ok=True)
+def cleanup_profile(game_name):
+    """Once a game is finished: moves its config and CSV (the single
+    csvs/<name>.csv, or an older export's csvs/<name>/ folder) into
+    completed/<name>/, and deletes its progress file. A game finished
+    before gets a dated folder instead, so nothing is overwritten."""
+    config_path, progress_path = profile_paths(game_name)
+    name = game_name or "default"
+
+    dest = COMPLETED_DIR / name
+    if dest.exists():
+        dest = COMPLETED_DIR / f"{name}_{datetime.now():%Y-%m-%d_%H%M%S}"
+    dest.mkdir(parents=True)
+
+    moved = []
+    if config_path.exists():
+        shutil.move(config_path, dest / config_path.name)
+        moved.append("config")
+    csvs = [p for p in (CSVS_DIR / f"{name}.csv", CSVS_DIR / name) if p.exists()]
+    for csv in csvs:
+        shutil.move(csv, dest / csv.name)
+    if csvs:
+        moved.append("CSV")
     progress_path.unlink(missing_ok=True)
-    print(f"Cleaned up {config_path} and {progress_path}.")
+
+    if moved:
+        print(f"Moved {' and '.join(moved)} to {dest.relative_to(PROJECT_DIR)}/.")
+    if not csvs:
+        print(f"Warning: no CSV found for {name} in csvs/ — nothing to move.")

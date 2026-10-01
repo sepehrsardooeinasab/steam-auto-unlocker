@@ -209,7 +209,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
             print("0 0")
             return
         print("All achievements already completed.")
-        cleanup_profile(config_path, progress_path)
+        cleanup_profile(game_name)
         return
 
 
@@ -443,6 +443,6 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
         send_command("resume")
         _schedule_asf_shutdown()
         print("\nAll achievements unlocked.")
-        cleanup_profile(config_path, progress_path)
+        cleanup_profile(game_name)
     finally:
         stop_caffeinate(caffeinate_proc)

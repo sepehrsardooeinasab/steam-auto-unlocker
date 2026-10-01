@@ -71,6 +71,7 @@ Put these lines in `~/.zshrc` — or, if you use oh-my-zsh, in a file under `~/.
 - `runsteamunlocker.zsh-completion` — tab-completion for available configs
 - `docs/` — the Unlock Scheduler web page (published via GitHub Pages)
 - `jsons/`, `csvs/`, `archifarm/` — per-machine runtime data (ASF install, bot credentials, generated configs); gitignored, not part of the repo
+- `completed/` — finished games: each game's config and CSV are moved to `completed/<name>/` once every achievement is unlocked (gitignored)
 
 ## Usage
 
