@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from unlocker.runner import list_status, run
 from unlocker.state import list_profiles
+from unlocker.timeline import show_timeline
 
 
 def choose_game_name():
@@ -43,6 +44,13 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     if "--status" in args:
         list_status()
+        sys.exit(0)
+    if "--show" in args:
+        rest = args[args.index("--show") + 1:]
+        if not rest or len(rest) > 2 or (len(rest) == 2 and rest[1] != "all" and not rest[1].isdigit()):
+            print("Usage: -s <config-name> [all | <session-number>]")
+            sys.exit(1)
+        show_timeline(rest[0], rest[1] if len(rest) == 2 else None)
         sys.exit(0)
     force = "-f" in args or "--force" in args
     time_only = "-t" in args or "--time" in args

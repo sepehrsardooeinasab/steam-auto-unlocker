@@ -81,6 +81,8 @@ runsteamunlocker -f <config-name>   # same, but skip the confirmation prompt
 runsteamunlocker -w <config-name>   # confirm now, wait until the session can run, then start it
 runsteamunlocker -in 2h <config-name>  # confirm now, start in 2h (also 30, 45m, 1h30m)
 runsteamunlocker -t <config-name>   # print the next session's wait/duration and exit, without running
+runsteamunlocker -s <config-name>   # show achievements from the current session onward (names, done/next)
+runsteamunlocker -s <config-name> all  # every session; or a number for just that session
 runsteamunlocker -k                 # stop ArchiSteamFarm and any running unlocker session
 runsteamunlocker -a                 # list available jsons/config_*.json profiles
 runsteamunlocker -j                 # open the Unlock Scheduler (docs/index.html) in the browser
