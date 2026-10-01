@@ -205,37 +205,113 @@
   // delay and exact delay in seconds, plus a label row heading each session
   // (readable + exact duration) and one for each gap between sessions
   // (readable + exact gap). Achievement rows are the ones with an id.
+  //
+  // targets[i] is the achievement id whose delay rows[i]'s delay cell edits
+  // (null when it isn't editable): an achievement's own delay, or — for a
+  // gap row — the next session's first achievement, which is where the
+  // config keeps that gap. A session's first achievement has no delay of
+  // its own (always 0), so it isn't editable itself.
   var CSV_DELAY_COL = 5;
   function buildCsvRows(sessions, gaps, durations) {
     var rows = [["session", "#", "achievement", "id", "unlock_time", "delay", "delay_s"]];
+    var targets = [null];
     sessions.forEach(function (session, i) {
-      if (i > 0) rows.push(["Gap before session " + (i + 1), "", "", "", "", roughDurationCsv(gaps[i - 1]), gaps[i - 1]]);
+      if (i > 0) {
+        rows.push(["Gap before session " + (i + 1), "", "", "", "", roughDurationCsv(gaps[i - 1]), gaps[i - 1]]);
+        targets.push(String(session[0].ach_id));
+      }
       rows.push(["Session " + (i + 1) + " (" + session.length + " achievement" + (session.length === 1 ? "" : "s") + ")",
         "", "", "", "", roughDurationCsv(durations[i]), durations[i]]);
+      targets.push(null);
       session.forEach(function (a, j) {
         rows.push([i + 1, j + 1, a.ach_name, a.ach_id, formatUnlockTime(a.unlock_time), roughDurationCsv(a.delay), a.delay]);
+        targets.push(j > 0 ? String(a.ach_id) : null);
       });
     });
-    return rows;
+    return {rows: rows, targets: targets};
+  }
+
+  // Applies manual delay edits ({ach_id: seconds}) on top of an already-split
+  // schedule. Sessions stay exactly as split from the real timestamps — an
+  // edit only changes timing, never which session an achievement is in.
+  // Returns the edited split plus originals ({ach_id: seconds}) for every
+  // editable delay, so the UI can show/undo what changed.
+  function applyEdits(split, edits) {
+    var originals = {};
+    var gaps = split.gaps.slice();
+    var sessions = split.sessions.map(function (session, si) {
+      return session.map(function (a, j) {
+        var key = String(a.ach_id);
+        if (j === 0) {
+          if (si > 0) {
+            originals[key] = gaps[si - 1];
+            if (key in edits) gaps[si - 1] = edits[key];
+          }
+          return a;
+        }
+        originals[key] = a.delay;
+        return key in edits ? Object.assign({}, a, {delay: edits[key]}) : a;
+      });
+    });
+    var durations = sessions.map(function (session) {
+      return session.reduce(function (t, a) { return t + a.delay; }, 0);
+    });
+    return {sessions: sessions, gaps: gaps, durations: durations, originals: originals};
+  }
+
+  // "15m", "1h30m", "2d", "90s", "1h 5m"; a bare number means minutes
+  // (same as runsteamunlocker -in). Returns seconds, or null if invalid.
+  function parseDelayInput(text) {
+    var t = String(text).toLowerCase().replace(/\s+/g, "");
+    if (/^\d+$/.test(t)) return parseInt(t, 10) * 60;
+    var m = t.match(/^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+    if (!t || !m) return null;
+    return (parseInt(m[1] || 0, 10) * 86400) + (parseInt(m[2] || 0, 10) * 3600) +
+      (parseInt(m[3] || 0, 10) * 60) + parseInt(m[4] || 0, 10);
+  }
+
+  // Exact, editable form of a delay: 3725 -> "1h2m5s".
+  function formatDelayInput(seconds) {
+    var d = Math.floor(seconds / 86400), h = Math.floor(seconds % 86400 / 3600);
+    var m = Math.floor(seconds % 3600 / 60), s = seconds % 60;
+    var out = (d ? d + "d" : "") + (h ? h + "h" : "") + (m ? m + "m" : "") + (s ? s + "s" : "");
+    return out || "0s";
   }
 
   function isLabelRow(row) {
     return row[3] === "";
   }
 
-  function rowsToTable(rows) {
+  // targets/edits/originals (optional) make delay cells clickable to edit,
+  // highlighting edited ones with an undo button.
+  function rowsToTable(rows, targets, edits, originals) {
     var head = rows[0];
     var body = rows.slice(1);
     var html = '<div class="table-wrap"><table class="csv-table"><thead><tr>';
     head.forEach(function (h) { html += "<th>" + escapeHtml(h) + "</th>"; });
     html += "</tr></thead><tbody>";
-    body.forEach(function (r) {
+
+    function delayCell(r, ri) {
+      var id = targets && targets[ri + 1];
+      if (!id) return "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>";
+      var edited = id in edits;
+      var title = edited
+        ? "Edited (was " + formatDelayInput(originals[id]) + ") — click to change"
+        : "Click to edit this delay";
+      return '<td class="delay-cell editable' + (edited ? " edited" : "") + '" data-id="' + escapeHtml(id) +
+        '" title="' + escapeHtml(title) + '">' + escapeHtml(r[CSV_DELAY_COL]) +
+        (edited ? '<button class="undo-edit" type="button" data-undo="' + escapeHtml(id) + '" title="Undo this edit">↺</button>' : "") +
+        "</td>";
+    }
+
+    body.forEach(function (r, ri) {
       if (isLabelRow(r)) {
         var cls = /^Gap/.test(r[0]) ? "gap-row" : "session-row";
         html += '<tr class="' + cls + '"><td colspan="' + CSV_DELAY_COL + '">' + escapeHtml(r[0]) + "</td>" +
-          r.slice(CSV_DELAY_COL).map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") + "</tr>";
+          delayCell(r, ri) + "<td>" + escapeHtml(r[CSV_DELAY_COL + 1]) + "</td></tr>";
       } else {
-        html += "<tr>" + r.map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") + "</tr>";
+        html += "<tr>" + r.slice(0, CSV_DELAY_COL).map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") +
+          delayCell(r, ri) + "<td>" + escapeHtml(r[CSV_DELAY_COL + 1]) + "</td></tr>";
       }
     });
     html += "</tbody></table></div>";
@@ -254,7 +330,7 @@
   }
 
   function escapeHtml(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
   // ---------------------------------------------------------------
@@ -298,7 +374,13 @@
   };
 
   var currentView = "input";
-  var latest = null; // { errors, warnings, config, jsonText, csvText, csvRows, filenames, stats }
+  var latest = null; // { errors, warnings, config, jsonText, csvText, csvRows, csvTargets, originals, filenames, stats }
+  // Manual delay edits from the Timeline tab: {ach_id: seconds}. While any
+  // exist, the pasted text is locked (changing it would orphan them).
+  var edits = {};
+  // Two-click confirmations: key -> time until which the second click counts.
+  var armedUntil = {};
+  var ARM_MS = 4000;
   var dirHandle = null;
 
   function showToast(msg) {
@@ -338,7 +420,8 @@
         gameName: els.gameName.value,
         gapLimit: els.gapLimit.value,
         cumLimit: els.cumLimit.value,
-        minGap: els.minGap.value
+        minGap: els.minGap.value,
+        edits: edits
       }));
     } catch (e) {}
   }
@@ -354,6 +437,7 @@
       if (d.gapLimit) els.gapLimit.value = d.gapLimit;
       if (d.cumLimit) els.cumLimit.value = d.cumLimit;
       if (d.minGap) els.minGap.value = d.minGap;
+      if (d.edits && typeof d.edits === "object") edits = d.edits;
     } catch (e) {}
   }
 
@@ -383,7 +467,7 @@
     });
     var simultaneous = Object.keys(timeMap).filter(function (t) { return timeMap[t].length > 1; });
 
-    var split = splitSessions(withDelays, gapLimitSec, cumLimitSec);
+    var split = applyEdits(splitSessions(withDelays, gapLimitSec, cumLimitSec), edits);
     var config = buildConfig(appidVal, split.sessions, split.gaps);
 
     // Unlike the warnings below, a re-sorted paste makes every ach_id
@@ -397,12 +481,20 @@
     split.gaps.forEach(function (g, i) {
       if (g <= minGapSec) warnings.push("Session " + (i + 2) + " starts only " + roughDuration(g) + " after the previous one (below your min gap).");
     });
+    split.sessions.forEach(function (session, si) {
+      session.forEach(function (a, j) {
+        if (j > 0 && String(a.ach_id) in edits && a.delay > gapLimitSec) {
+          warnings.push(a.ach_name + " (session " + (si + 1) + ") is edited to wait " + roughDuration(a.delay) +
+            ", longer than your session gap limit. It stays in session " + (si + 1) + ", so the game keeps running in ASF the whole time.");
+        }
+      });
+    });
     var zeroSessions = split.durations.filter(function (d) { return d <= 1; }).length;
     if (zeroSessions) warnings.push(zeroSessions + " session(s) have essentially zero duration (a single achievement).");
 
     var suffix = gameName ? "_" + gameName : "";
 
-    var csvRows = buildCsvRows(split.sessions, split.gaps, split.durations);
+    var csv = buildCsvRows(split.sessions, split.gaps, split.durations);
 
     latest = {
       errors: [],
@@ -410,8 +502,10 @@
       warnings: warnings,
       config: config,
       jsonText: JSON.stringify(config, null, 2),
-      csvText: toCsv(csvRows),
-      csvRows: csvRows,
+      csvText: toCsv(csv.rows),
+      csvRows: csv.rows,
+      csvTargets: csv.targets,
+      originals: split.originals,
       filenames: {
         json: "config" + suffix + ".json",
         csv: (gameName || "default") + ".csv"
@@ -432,7 +526,45 @@
     return null;
   }
 
+  function editCount() {
+    return Object.keys(edits).length;
+  }
+
+  function isArmed(key) {
+    return (armedUntil[key] || 0) > Date.now();
+  }
+
+  // First click arms `key` (render shows a "click again" label); a second
+  // click within ARM_MS returns true. Unclicked, it disarms itself.
+  function confirmTwice(key) {
+    if (isArmed(key)) { delete armedUntil[key]; return true; }
+    armedUntil[key] = Date.now() + ARM_MS;
+    setTimeout(render, ARM_MS + 50);
+    render();
+    return false;
+  }
+
+  function editsBannerHtml() {
+    var n = editCount();
+    if (!n) return "";
+    var label = isArmed("discard")
+      ? "Click again to discard " + n + " edit" + (n === 1 ? "" : "s")
+      : "Discard edits";
+    return '<div class="notice info edits-banner"><span>' + n + " delay" + (n === 1 ? "" : "s") +
+      " edited in Timeline. The pasted text is locked until you download or discard them.</span>" +
+      '<button class="btn-ghost discard-edits' + (isArmed("discard") ? " armed" : "") + '" type="button">' + label + "</button></div>";
+  }
+
   function render() {
+    // Pasted text is locked while there are edits: changing it would
+    // re-parse into a different achievement list the edits don't match.
+    var locked = editCount() > 0;
+    els.exportText.readOnly = locked;
+    els.exportText.classList.toggle("locked", locked);
+    els.resetBtn.textContent = locked && isArmed("reset")
+      ? "Click again to reset (discards edits)" : "Reset all fields";
+    els.resetBtn.classList.toggle("armed", locked && isArmed("reset"));
+
     // nav "has content" dots
     var ok = latest && !latest.errors.length;
     ["json", "csv"].forEach(function (k) {
@@ -457,7 +589,7 @@
 
     var dangers = ok ? latest.dangers : [];
     var dangerHtml = dangers.map(function (d) { return noticeHtml("danger", d); }).join("");
-    els.inputAlertSlot.innerHTML = dangerHtml;
+    els.inputAlertSlot.innerHTML = dangerHtml + editsBannerHtml();
     els.downloadBtn.classList.toggle("btn-danger", dangers.length > 0);
     els.downloadBtn.textContent = dangers.length ? "Download anyway" : "Download All";
     els.downloadBtn.title = dangers.join("\n");
@@ -475,12 +607,13 @@
       return;
     }
 
-    var warningsHtml = dangerHtml + latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("");
+    var warningsHtml = dangerHtml + latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("") +
+      (fileKey === "csv" ? editsBannerHtml() || noticeHtml("info", "Click a delay to change it, e.g. 15m, 1h30m, 2d, 90s (a bare number means minutes).") : "");
 
     if (fileKey === "json") {
       slot.innerHTML = warningsHtml + '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>";
     } else {
-      slot.innerHTML = warningsHtml + rowsToTable(latest.csvRows);
+      slot.innerHTML = warningsHtml + rowsToTable(latest.csvRows, latest.csvTargets, edits, latest.originals);
     }
   }
 
@@ -509,13 +642,88 @@
     el.addEventListener("input", scheduleRecompute);
   });
 
-  els.resetBtn.addEventListener("click", function () {
+  function resetAll() {
     els.exportText.value = "";
     resetSettingFields();
+    edits = {};
+    armedUntil = {};
     try { localStorage.removeItem("unlock-scheduler-draft"); } catch (e) {}
     recompute();
     render();
+  }
+
+  els.resetBtn.addEventListener("click", function () {
+    if (editCount() && !confirmTwice("reset")) return;
+    resetAll();
     showToast("Fields reset");
+  });
+
+  // ---- delay editing (Timeline tab) + discard-edits banner ----
+  function setEdit(id, seconds) {
+    if (latest && latest.originals && latest.originals[id] === seconds) delete edits[id];
+    else edits[id] = seconds;
+    saveDraft();
+    recompute();
+    render();
+  }
+
+  function currentDelay(id) {
+    var ri = latest.csvTargets.indexOf(id);
+    return ri < 0 ? 0 : Number(latest.csvRows[ri][CSV_DELAY_COL + 1]);
+  }
+
+  function startEditing(cell) {
+    var id = cell.getAttribute("data-id");
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "delay-input";
+    input.value = formatDelayInput(currentDelay(id));
+    input.placeholder = "e.g. 15m";
+    cell.textContent = "";
+    cell.appendChild(input);
+    input.focus();
+    input.select();
+
+    var done = false;
+    function finish(save) {
+      if (done) return;
+      done = true;
+      if (!save) { render(); return; }
+      var seconds = parseDelayInput(input.value);
+      if (seconds === null) {
+        showToast("Use a time like 15m, 1h30m, 2d or 90s");
+        render();
+        return;
+      }
+      setEdit(id, seconds);
+    }
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") finish(true);
+      else if (e.key === "Escape") finish(false);
+    });
+    input.addEventListener("blur", function () { finish(true); });
+  }
+
+  document.addEventListener("click", function (e) {
+    var undo = e.target.closest(".undo-edit");
+    if (undo) {
+      delete edits[undo.getAttribute("data-undo")];
+      saveDraft();
+      recompute();
+      render();
+      return;
+    }
+    if (e.target.closest(".discard-edits")) {
+      if (!confirmTwice("discard")) return;
+      edits = {};
+      saveDraft();
+      recompute();
+      render();
+      showToast("Edits discarded");
+      return;
+    }
+    var cell = e.target.closest("td.delay-cell.editable");
+    if (cell && !cell.querySelector("input")) startEditing(cell);
   });
 
   // ---- collapsible side panels ----
@@ -600,7 +808,7 @@
 
     if (dirHandle) {
       Promise.all(files.map(function (f) { return saveIntoFolder(f.dirParts, f.filename, f.content); }))
-        .then(function () { showToast("Saved config.json + CSV to " + dirHandle.name + "/"); })
+        .then(function () { resetAll(); showToast("Saved config.json + CSV to " + dirHandle.name + "/ — fields reset"); })
         .catch(function (err) { showToast("Couldn't save: " + (err && err.message ? err.message : "unknown error")); });
       return;
     }
@@ -613,10 +821,11 @@
             .then(function () { return new Promise(function (r) { setTimeout(r, i < files.length - 1 ? 300 : 0); }); });
         });
       });
-      chain.then(function () { showToast("Saved config.json + CSV"); }).catch(function () {});
+      chain.then(function () { resetAll(); showToast("Saved config.json + CSV — fields reset"); }).catch(function () {});
     }).catch(function () {
       files.forEach(function (f) { blobDownload(f.filename, f.mime, f.content); });
-      showToast("Saved config.json + CSV");
+      resetAll();
+      showToast("Saved config.json + CSV — fields reset");
     });
   });
 
