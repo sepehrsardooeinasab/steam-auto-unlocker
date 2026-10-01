@@ -266,30 +266,22 @@
     return {sessions: sessions, gaps: gaps, durations: durations, originals: originals};
   }
 
-  // "15m", "1h30m", "2d", "90s", "1h 5m"; a bare number means minutes
-  // (same as runsteamunlocker -in). Returns seconds, or null if invalid.
+  // Seconds ("90"), or "15m", "1h30m", "2d", "1h 5m". Returns seconds, or
+  // null if invalid.
   function parseDelayInput(text) {
     var t = String(text).toLowerCase().replace(/\s+/g, "");
-    if (/^\d+$/.test(t)) return parseInt(t, 10) * 60;
+    if (/^\d+$/.test(t)) return parseInt(t, 10);
     var m = t.match(/^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
     if (!t || !m) return null;
     return (parseInt(m[1] || 0, 10) * 86400) + (parseInt(m[2] || 0, 10) * 3600) +
       (parseInt(m[3] || 0, 10) * 60) + parseInt(m[4] || 0, 10);
   }
 
-  // Exact, editable form of a delay: 3725 -> "1h2m5s".
-  function formatDelayInput(seconds) {
-    var d = Math.floor(seconds / 86400), h = Math.floor(seconds % 86400 / 3600);
-    var m = Math.floor(seconds % 3600 / 60), s = seconds % 60;
-    var out = (d ? d + "d" : "") + (h ? h + "h" : "") + (m ? m + "m" : "") + (s ? s + "s" : "");
-    return out || "0s";
-  }
-
   function isLabelRow(row) {
     return row[3] === "";
   }
 
-  // targets/edits/originals (optional) make delay cells clickable to edit,
+  // targets/edits/originals (optional) make delay_s cells clickable to edit,
   // highlighting edited ones with an undo button.
   function rowsToTable(rows, targets, edits, originals) {
     var head = rows[0];
@@ -300,13 +292,13 @@
 
     function delayCell(r, ri) {
       var id = targets && targets[ri + 1];
-      if (!id) return "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>";
+      if (!id) return "<td>" + escapeHtml(r[CSV_DELAY_COL + 1]) + "</td>";
       var edited = id in edits;
       var title = edited
-        ? "Edited (was " + formatDelayInput(originals[id]) + ") — click to change"
+        ? "Edited (was " + originals[id] + "s) — click to change"
         : "Click to edit this delay";
       return '<td class="delay-cell editable' + (edited ? " edited" : "") + '" data-id="' + escapeHtml(id) +
-        '" title="' + escapeHtml(title) + '">' + escapeHtml(r[CSV_DELAY_COL]) +
+        '" title="' + escapeHtml(title) + '">' + escapeHtml(r[CSV_DELAY_COL + 1]) +
         (edited ? '<button class="undo-edit" type="button" data-undo="' + escapeHtml(id) + '" title="Undo this edit">↺</button>' : "") +
         "</td>";
     }
@@ -315,10 +307,10 @@
       if (isLabelRow(r)) {
         var cls = /^Gap/.test(r[0]) ? "gap-row" : /^Copied from:/.test(r[0]) ? "meta-row" : "session-row";
         html += '<tr class="' + cls + '"><td colspan="' + CSV_DELAY_COL + '">' + escapeHtml(r[0]) + "</td>" +
-          delayCell(r, ri) + "<td>" + escapeHtml(r[CSV_DELAY_COL + 1]) + "</td></tr>";
+          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + "</tr>";
       } else {
         html += "<tr>" + r.slice(0, CSV_DELAY_COL).map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") +
-          delayCell(r, ri) + "<td>" + escapeHtml(r[CSV_DELAY_COL + 1]) + "</td></tr>";
+          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + "</tr>";
       }
     });
     html += "</tbody></table></div>";
@@ -620,7 +612,7 @@
     }
 
     var warningsHtml = dangerHtml + latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("") +
-      (fileKey === "csv" ? editsBannerHtml() || noticeHtml("info", "Click a delay to change it, e.g. 15m, 1h30m, 2d, 90s (a bare number means minutes).") : "");
+      (fileKey === "csv" ? editsBannerHtml() || noticeHtml("info", "Click a delay_s value to change it, in seconds (or e.g. 15m, 1h30m, 2d).") : "");
 
     if (fileKey === "json") {
       slot.innerHTML = warningsHtml + '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>";
@@ -690,8 +682,8 @@
     var input = document.createElement("input");
     input.type = "text";
     input.className = "delay-input";
-    input.value = formatDelayInput(currentDelay(id));
-    input.placeholder = "e.g. 15m";
+    input.value = currentDelay(id);
+    input.placeholder = "seconds";
     cell.textContent = "";
     cell.appendChild(input);
     input.focus();
@@ -704,7 +696,7 @@
       if (!save) { render(); return; }
       var seconds = parseDelayInput(input.value);
       if (seconds === null) {
-        showToast("Use a time like 15m, 1h30m, 2d or 90s");
+        showToast("Use seconds like 90, or a time like 15m, 1h30m, 2d");
         render();
         return;
       }
