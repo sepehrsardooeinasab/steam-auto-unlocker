@@ -381,6 +381,9 @@
   // Two-click confirmations: key -> time until which the second click counts.
   var armedUntil = {};
   var ARM_MS = 4000;
+  // The "pasted text is locked" notice shows only after clicking the locked
+  // text box, until the next click elsewhere.
+  var showLockNotice = false;
   var dirHandle = null;
 
   function showToast(msg) {
@@ -549,12 +552,12 @@
 
   function editsBannerHtml() {
     var n = editCount();
-    if (!n) return "";
+    if (!n || !showLockNotice) return "";
     var label = isArmed("discard")
       ? "Click again to discard " + n + " edit" + (n === 1 ? "" : "s")
       : "Discard edits";
     return '<div class="notice info edits-banner"><span>' + n + " delay" + (n === 1 ? "" : "s") +
-      " edited in Timeline. The pasted text is locked until you download or discard them.</span>" +
+      " edited in Timeline, so the pasted text is locked until you download or discard them.</span>" +
       '<button class="btn-ghost discard-edits' + (isArmed("discard") ? " armed" : "") + '" type="button">' + label + "</button></div>";
   }
 
@@ -611,7 +614,7 @@
     }
 
     var warningsHtml = dangerHtml + latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("") +
-      (fileKey === "csv" ? editsBannerHtml() || noticeHtml("info", "Click a delay_s value to change it, in seconds (or e.g. 15m, 1h30m, 2d).") : "");
+      (fileKey === "csv" ? noticeHtml("info", "Click a delay_s value to change it, in seconds (or e.g. 15m, 1h30m, 2d).") : "");
 
     if (fileKey === "json") {
       slot.innerHTML = warningsHtml + '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>";
@@ -728,7 +731,19 @@
     }
     var cell = e.target.closest("td.delay-cell.editable");
     if (cell && !cell.querySelector("input")) startEditing(cell);
+    if (showLockNotice && e.target !== els.exportText && !e.target.closest(".edits-banner")) {
+      showLockNotice = false;
+      render();
+    }
   });
+
+  function noticeLocked() {
+    if (!editCount() || showLockNotice) return;
+    showLockNotice = true;
+    render();
+  }
+  els.exportText.addEventListener("click", noticeLocked);
+  els.exportText.addEventListener("focus", noticeLocked);
 
   // ---- collapsible side panels ----
   function wireCollapse(buttonId, panelId, storageKey) {
