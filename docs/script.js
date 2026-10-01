@@ -266,15 +266,10 @@
     return {sessions: sessions, gaps: gaps, durations: durations, originals: originals};
   }
 
-  // Seconds ("90"), or "15m", "1h30m", "2d", "1h 5m". Returns seconds, or
-  // null if invalid.
+  // Whole seconds. Returns null if invalid.
   function parseDelayInput(text) {
-    var t = String(text).toLowerCase().replace(/\s+/g, "");
-    if (/^\d+$/.test(t)) return parseInt(t, 10);
-    var m = t.match(/^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
-    if (!t || !m) return null;
-    return (parseInt(m[1] || 0, 10) * 86400) + (parseInt(m[2] || 0, 10) * 3600) +
-      (parseInt(m[3] || 0, 10) * 60) + parseInt(m[4] || 0, 10);
+    var t = String(text).trim();
+    return /^\d+$/.test(t) ? parseInt(t, 10) : null;
   }
 
   function isLabelRow(row) {
@@ -614,7 +609,7 @@
     }
 
     var warningsHtml = dangerHtml + latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("") +
-      (fileKey === "csv" ? noticeHtml("info", "Click a delay_s value to change it, in seconds (or e.g. 15m, 1h30m, 2d).") : "");
+      (fileKey === "csv" ? noticeHtml("info", "Click a delay_s value to change it (in seconds).") : "");
 
     if (fileKey === "json") {
       slot.innerHTML = warningsHtml + '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>";
@@ -698,7 +693,7 @@
       if (!save) { render(); return; }
       var seconds = parseDelayInput(input.value);
       if (seconds === null) {
-        showToast("Use seconds like 90, or a time like 15m, 1h30m, 2d");
+        showToast("Enter a whole number of seconds, e.g. 90");
         render();
         return;
       }
