@@ -295,14 +295,13 @@
 
   // ui (optional) = {targets, gapActions, edits, originals, breaks,
   // autoBreaks} makes delay_s cells clickable to edit (edited ones are
-  // highlighted with an undo button) and adds a column of add/remove-gap
-  // buttons.
+  // highlighted with an undo button) and adds small add/remove-gap
+  // buttons after the session number / gap label.
   function rowsToTable(rows, ui) {
     var head = rows[0];
     var body = rows.slice(1);
     var html = '<div class="table-wrap"><table class="csv-table"><thead><tr>';
     head.forEach(function (h) { html += "<th>" + escapeHtml(h) + "</th>"; });
-    if (ui) html += "<th></th>";
     html += "</tr></thead><tbody>";
 
     function delayCell(r, ri) {
@@ -319,29 +318,29 @@
     }
 
     // A gap is manual when it differs from what the limits would decide:
-    // an added gap shows highlighted "− gap", a removed one "+ gap".
-    function gapCell(ri) {
-      if (!ui) return "";
-      var act = ui.gapActions[ri + 1];
-      if (!act) return "<td></td>";
+    // an added gap shows a highlighted −, a removed one a highlighted +.
+    function gapButton(ri) {
+      var act = ui && ui.gapActions[ri + 1];
+      if (!act) return "";
       var manual = act.id in ui.breaks && ui.breaks[act.id] !== ui.autoBreaks[act.id];
       var add = act.kind === "add";
       var title = add
         ? (manual ? "A gap was removed here — click to put it back" : "Start a new session at this achievement")
         : (manual ? "You added this gap — click to remove it" : "Remove this gap (merge into the previous session)");
-      return '<td class="gap-action"><button class="gap-btn' + (manual ? " edited" : "") + '" type="button" data-gap="' +
+      return '<button class="gap-btn' + (manual ? " edited" : "") + '" type="button" data-gap="' +
         escapeHtml(act.id) + '" data-kind="' + act.kind + '" title="' + escapeHtml(title) + '">' +
-        (add ? "+ gap" : "− gap") + "</button></td>";
+        (add ? "+" : "−") + "</button>";
     }
 
     body.forEach(function (r, ri) {
       if (isLabelRow(r)) {
         var cls = /^Gap/.test(r[0]) ? "gap-row" : /^Copied from:/.test(r[0]) ? "meta-row" : "session-row";
-        html += '<tr class="' + cls + '"><td colspan="' + CSV_DELAY_COL + '">' + escapeHtml(r[0]) + "</td>" +
-          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + gapCell(ri) + "</tr>";
+        html += '<tr class="' + cls + '"><td colspan="' + CSV_DELAY_COL + '">' + escapeHtml(r[0]) + gapButton(ri) + "</td>" +
+          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + "</tr>";
       } else {
-        html += "<tr>" + r.slice(0, CSV_DELAY_COL).map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") +
-          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + gapCell(ri) + "</tr>";
+        html += "<tr><td>" + escapeHtml(r[0]) + gapButton(ri) + "</td>" +
+          r.slice(1, CSV_DELAY_COL).map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") +
+          "<td>" + escapeHtml(r[CSV_DELAY_COL]) + "</td>" + delayCell(r, ri) + "</tr>";
       }
     });
     html += "</tbody></table></div>";
@@ -667,16 +666,18 @@
       return;
     }
 
-    var warningsHtml = dangerHtml + latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("") +
-      (fileKey === "csv" ? noticeHtml("info", "Click a delay_s value to change it (in seconds). Use + gap to start a new session at an achievement, − gap to remove a gap.") : "");
+    // Notices go under the preview (as under the paste box) so the box
+    // sits in the same place on every tab.
+    var warningsHtml = '<div class="notices-below">' + dangerHtml +
+      latest.warnings.map(function (w) { return noticeHtml("warn", w); }).join("") + "</div>";
 
     if (fileKey === "json") {
-      slot.innerHTML = warningsHtml + '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>";
+      slot.innerHTML = '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>" + warningsHtml;
     } else {
-      slot.innerHTML = warningsHtml + rowsToTable(latest.csvRows, {
+      slot.innerHTML = rowsToTable(latest.csvRows, {
         targets: latest.csvTargets, gapActions: latest.gapActions, edits: edits,
         originals: latest.originals, breaks: breaks, autoBreaks: latest.autoBreaks
-      });
+      }) + warningsHtml;
     }
   }
 

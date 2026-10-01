@@ -49,7 +49,7 @@
       <div class="box-content">
         <div class="view-pane active" data-view="input">
           <div class="field">
-            <label for="export-text">Paste export</label>
+            <label for="export-text" class="visually-hidden">Paste export</label>
             <textarea id="export-text" spellcheck="false" placeholder="Paste the copied SteamHunters achievements page here…"></textarea>
             <div id="input-alert-slot"></div>
             <details class="hint">
@@ -114,6 +114,14 @@ Description text
         </div>
         <div class="view-pane" data-view="csv">
           <div id="csv-slot"></div>
+          <details class="hint">
+            <summary>How to edit</summary>
+            <ul>
+              <li>Click a <b>delay_s</b> value to change it (in seconds). On a gap row, that's the gap's length.</li>
+              <li><b>+</b> after a session number starts a new session at that achievement; <b>−</b> after a gap label removes the gap.</li>
+              <li>Edited values are highlighted; ↺ or clicking + / − again undoes them.</li>
+            </ul>
+          </details>
         </div>
       </div>
 
