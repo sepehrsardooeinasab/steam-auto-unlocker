@@ -421,7 +421,11 @@
     background: var(--info-bg);
     color: var(--info);
     font-style: italic;
-    text-align: center;
+  }
+  table.csv-table tr.session-row td {
+    background: var(--box-bg-alt);
+    font-weight: 700;
+    border-top: 2px solid var(--box-border);
   }
 
   .box-footer {

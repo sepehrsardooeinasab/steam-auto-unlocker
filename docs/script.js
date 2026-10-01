@@ -174,13 +174,14 @@
     return seconds + "s";
   }
 
-  // Matches builder/save.py's rough_duration() exactly, for CSV parity.
-  function roughDurationPy(seconds) {
+  // Human-readable duration for the CSV. Never starts with "=" — spreadsheets
+  // would treat that cell as a formula.
+  function roughDurationCsv(seconds) {
     seconds = Math.trunc(seconds);
-    if (seconds >= 86400) return ">1 day";
+    if (seconds >= 86400) return "~" + String(Math.round(seconds / 86400)).padStart(2, "0") + " day";
     if (seconds >= 3600) return "~" + String(Math.ceil(seconds / 3600)).padStart(2, "0") + " hour";
     if (seconds >= 60) return "~" + String(Math.ceil(seconds / 60)).padStart(2, "0") + " min";
-    return "=" + String(seconds).padStart(2, "0") + " sec";
+    return String(seconds).padStart(2, "0") + " sec";
   }
 
   function formatUnlockTime(ms) {
@@ -200,39 +201,26 @@
     return rows.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n") + "\r\n";
   }
 
-  function buildMergedRows(withDelays) {
-    var rows = [["ach_name", "ach_id", "unlock_time", "delay (s)"]];
-    withDelays.forEach(function (a) {
-      rows.push([a.ach_name, a.ach_id, formatUnlockTime(a.unlock_time), a.delay]);
-    });
-    return rows;
-  }
-
-  function buildSessionsRows(sessions, gaps) {
-    var rows = [["session_index", "ach_name", "ach_id", "unlock_time", "delay (h m s)"]];
+  // The single per-game CSV: every achievement with its session, readable
+  // delay and exact delay in seconds, plus a label row heading each session
+  // (readable + exact duration) and one for each gap between sessions
+  // (readable + exact gap). Achievement rows are the ones with an id.
+  var CSV_DELAY_COL = 5;
+  function buildCsvRows(sessions, gaps, durations) {
+    var rows = [["session", "#", "achievement", "id", "unlock_time", "delay", "delay_s"]];
     sessions.forEach(function (session, i) {
-      session.forEach(function (a) {
-        rows.push([i + 1, a.ach_name, a.ach_id, formatUnlockTime(a.unlock_time), roughDurationPy(a.delay)]);
+      if (i > 0) rows.push(["Gap before session " + (i + 1), "", "", "", "", roughDurationCsv(gaps[i - 1]), gaps[i - 1]]);
+      rows.push(["Session " + (i + 1) + " (" + session.length + " achievement" + (session.length === 1 ? "" : "s") + ")",
+        "", "", "", "", roughDurationCsv(durations[i]), durations[i]]);
+      session.forEach(function (a, j) {
+        rows.push([i + 1, j + 1, a.ach_name, a.ach_id, formatUnlockTime(a.unlock_time), roughDurationCsv(a.delay), a.delay]);
       });
-      if (i < sessions.length - 1) rows.push(["", "", "", "", roughDurationPy(gaps[i])]);
     });
     return rows;
   }
 
-  function buildSummaryRows(durations, gaps) {
-    var rows = [["session_index", "session_duration", "gap_from_previous"]];
-    durations.forEach(function (d, i) {
-      rows.push([i + 1, roughDurationPy(d), i !== 0 ? roughDurationPy(gaps[i - 1]) : ""]);
-    });
-    return rows;
-  }
-
-  // A gap-marker row (all cells blank except the trailing gap duration),
-  // inserted between sessions in buildSessionsRows purely so the on-screen
-  // table can show a "— gap until next session —" separator. Filtered back
-  // out before the same row data is turned into the actual downloaded CSV.
-  function isGapRow(row) {
-    return row.slice(0, -1).every(function (c) { return c === ""; }) && row[row.length - 1] !== "";
+  function isLabelRow(row) {
+    return row[3] === "";
   }
 
   function rowsToTable(rows) {
@@ -242,8 +230,10 @@
     head.forEach(function (h) { html += "<th>" + escapeHtml(h) + "</th>"; });
     html += "</tr></thead><tbody>";
     body.forEach(function (r) {
-      if (isGapRow(r)) {
-        html += '<tr class="gap-row"><td colspan="' + head.length + '">— ' + escapeHtml(r[r.length - 1]) + " gap until next session —</td></tr>";
+      if (isLabelRow(r)) {
+        var cls = /^Gap/.test(r[0]) ? "gap-row" : "session-row";
+        html += '<tr class="' + cls + '"><td colspan="' + CSV_DELAY_COL + '">' + escapeHtml(r[0]) + "</td>" +
+          r.slice(CSV_DELAY_COL).map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") + "</tr>";
       } else {
         html += "<tr>" + r.map(function (c) { return "<td>" + escapeHtml(c) + "</td>"; }).join("") + "</tr>";
       }
@@ -285,9 +275,7 @@
     statsStrip: document.getElementById("stats-strip"),
     toast: document.getElementById("toast"),
     jsonSlot: document.getElementById("json-slot"),
-    csvMergedSlot: document.getElementById("csv-merged-slot"),
-    csvSessionsSlot: document.getElementById("csv-sessions-slot"),
-    csvSummarySlot: document.getElementById("csv-summary-slot"),
+    csvSlot: document.getElementById("csv-slot"),
     inputAlertSlot: document.getElementById("input-alert-slot")
   };
 
@@ -299,22 +287,18 @@
     input: "Achievements",
     settings: "Settings",
     json: "Schedule (config.json)",
-    "csv-merged": "Full Timeline (merged.csv)",
-    "csv-sessions": "Sessions (sessions.csv)",
-    "csv-summary": "Session Summary (summary_session.csv)"
+    csv: "Timeline (csv)"
   };
 
   var navButtons = {
     input: document.getElementById("nav-input"),
     settings: document.getElementById("nav-settings"),
     json: document.getElementById("nav-json"),
-    "csv-merged": document.getElementById("nav-csv-merged"),
-    "csv-sessions": document.getElementById("nav-csv-sessions"),
-    "csv-summary": document.getElementById("nav-csv-summary")
+    csv: document.getElementById("nav-csv")
   };
 
   var currentView = "input";
-  var latest = null; // { errors, warnings, config, jsonText, csv:{merged,sessions,summary}, filenames, stats }
+  var latest = null; // { errors, warnings, config, jsonText, csvText, csvRows, filenames, stats }
   var dirHandle = null;
 
   function showToast(msg) {
@@ -418,9 +402,7 @@
 
     var suffix = gameName ? "_" + gameName : "";
 
-    var mergedRows = buildMergedRows(withDelays);
-    var sessionsRows = buildSessionsRows(split.sessions, split.gaps);
-    var summaryRows = buildSummaryRows(split.durations, split.gaps);
+    var csvRows = buildCsvRows(split.sessions, split.gaps, split.durations);
 
     latest = {
       errors: [],
@@ -428,21 +410,11 @@
       warnings: warnings,
       config: config,
       jsonText: JSON.stringify(config, null, 2),
-      csv: {
-        merged: toCsv(mergedRows),
-        sessions: toCsv([sessionsRows[0]].concat(sessionsRows.slice(1).filter(function (r) { return !isGapRow(r); }))),
-        summary: toCsv(summaryRows)
-      },
-      rows: {
-        merged: mergedRows,
-        sessions: sessionsRows,
-        summary: summaryRows
-      },
+      csvText: toCsv(csvRows),
+      csvRows: csvRows,
       filenames: {
         json: "config" + suffix + ".json",
-        merged: "merged" + suffix + ".csv",
-        sessions: "sessions" + suffix + ".csv",
-        summary: "summary_session" + suffix + ".csv"
+        csv: (gameName || "default") + ".csv"
       },
       stats: {
         achievements: config.achievements.length,
@@ -456,16 +428,14 @@
 
   function fileKeyForView(view) {
     if (view === "json") return "json";
-    if (view === "csv-merged") return "merged";
-    if (view === "csv-sessions") return "sessions";
-    if (view === "csv-summary") return "summary";
+    if (view === "csv") return "csv";
     return null;
   }
 
   function render() {
     // nav "has content" dots
     var ok = latest && !latest.errors.length;
-    ["json", "csv-merged", "csv-sessions", "csv-summary"].forEach(function (k) {
+    ["json", "csv"].forEach(function (k) {
       navButtons[k].classList.toggle("has-content", !!ok);
     });
 
@@ -495,9 +465,8 @@
     var fileKey = fileKeyForView(currentView);
     if (!fileKey) return;
 
-    var slot = fileKey === "json" ? els.jsonSlot :
-      fileKey === "merged" ? els.csvMergedSlot :
-      fileKey === "sessions" ? els.csvSessionsSlot : els.csvSummarySlot;
+    var slot = fileKey === "json" ? els.jsonSlot : els.csvSlot;
+    if (fileKey === "csv" && ok) els.boxTitle.textContent = "Timeline (" + latest.filenames.csv + ")";
 
     if (!latest || latest.errors.length) {
       var msgs = latest ? latest.errors : ["Paste an export first."];
@@ -511,7 +480,7 @@
     if (fileKey === "json") {
       slot.innerHTML = warningsHtml + '<pre class="file-preview">' + highlightJson(latest.jsonText) + "</pre>";
     } else {
-      slot.innerHTML = warningsHtml + rowsToTable(latest.rows[fileKey]);
+      slot.innerHTML = warningsHtml + rowsToTable(latest.csvRows);
     }
   }
 
@@ -616,26 +585,22 @@
     return Promise.resolve();
   }
 
-  // Saves config.json + all three CSVs together in one action:
+  // Saves config.json + the CSV together in one action:
   //   <folder>/jsons/config[_<name>].json
-  //   <folder>/csvs/<name>/{merged,sessions,summary_session}.csv
-  // matching generate_json.py's own layout. Falls back to one browser/
-  // claude.ai save prompt per file (with a small stagger) when no folder
-  // has been chosen.
+  //   <folder>/csvs/<name>.csv
+  // Falls back to one browser/claude.ai save prompt per file (with a small
+  // stagger) when no folder has been chosen.
   els.downloadBtn.addEventListener("click", function () {
     if (!latest || latest.errors.length) return;
 
-    var folderName = (els.gameName.value.trim().toLowerCase()) || "default";
     var files = [
       {dirParts: ["jsons"], filename: latest.filenames.json, mime: "application/json", content: latest.jsonText},
-      {dirParts: ["csvs", folderName], filename: "merged.csv", mime: "text/csv", content: latest.csv.merged},
-      {dirParts: ["csvs", folderName], filename: "sessions.csv", mime: "text/csv", content: latest.csv.sessions},
-      {dirParts: ["csvs", folderName], filename: "summary_session.csv", mime: "text/csv", content: latest.csv.summary}
+      {dirParts: ["csvs"], filename: latest.filenames.csv, mime: "text/csv", content: latest.csvText}
     ];
 
     if (dirHandle) {
       Promise.all(files.map(function (f) { return saveIntoFolder(f.dirParts, f.filename, f.content); }))
-        .then(function () { showToast("Saved config.json + 3 CSVs to " + dirHandle.name + "/"); })
+        .then(function () { showToast("Saved config.json + CSV to " + dirHandle.name + "/"); })
         .catch(function (err) { showToast("Couldn't save: " + (err && err.message ? err.message : "unknown error")); });
       return;
     }
@@ -648,10 +613,10 @@
             .then(function () { return new Promise(function (r) { setTimeout(r, i < files.length - 1 ? 300 : 0); }); });
         });
       });
-      chain.then(function () { showToast("Saved config.json + 3 CSVs"); }).catch(function () {});
+      chain.then(function () { showToast("Saved config.json + CSV"); }).catch(function () {});
     }).catch(function () {
       files.forEach(function (f) { blobDownload(f.filename, f.mime, f.content); });
-      showToast("Saved config.json + 3 CSVs");
+      showToast("Saved config.json + CSV");
     });
   });
 
