@@ -308,9 +308,11 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
     signal.signal(signal.SIGHUP, _raise_signalled)
     signal.signal(signal.SIGTERM, _raise_signalled)
 
-    caffeinate_proc = start_caffeinate()
+    # Nothing to wait out (e.g. a single-achievement session that fires right
+    # away) means nothing to stay awake for — the run is over in seconds.
+    awake_for = (max(start_at, ready_at) - now).total_seconds() + est_duration
+    caffeinate_proc = start_caffeinate() if awake_for > 0 else None
     if caffeinate_proc is not None:
-        awake_for = (max(start_at, ready_at) - now).total_seconds() + est_duration
         print(f"Caffeinate activated for {_format_duration(awake_for)}.")
 
     try:
