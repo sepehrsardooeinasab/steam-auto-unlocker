@@ -26,7 +26,7 @@ Usage: runsteamunlocker [-f] [-w | -in <time>] <config-name>
                   session and exit, without running or touching ASF.
   -k, --kill      Stop ArchiSteamFarm and any running unlocker session.
   -h, --help      Show this help.
-  -a              List available jsons/config_*.json profiles.
+  -a, --all       List available jsons/config_*.json profiles.
   -ls, --status   List every profile's next session (number, length,
                   achievement count) and when it can run, without
                   running anything or touching ASF.
@@ -34,8 +34,8 @@ Usage: runsteamunlocker [-f] [-w | -in <time>] <config-name>
                   names from its CSV and what's done / next. Defaults to
                   the current session onward; "all" shows every session,
                   a number just that one. Works for finished games too.
-  -c              Open the project in VS Code.
-  -j              Open the JSON/unlock scheduler builder.
+  -c, --code      Open the project in VS Code.
+  -j, --json      Open the JSON/unlock scheduler builder.
 EOF
 }
 
@@ -126,16 +126,16 @@ case "${1-}" in
     --list-configs)
         list_configs
         ;;
-    -a)
+    -a|--all)
         list_configs
         ;;
     -ls|--status)
         exec python3 "$PROJECT_DIR/unlocker/run_unlocker.py" --status
         ;;
-    -c)
+    -c|--code)
         code "$PROJECT_DIR"
         ;;
-    -j)
+    -j|--json)
         open_file "$PROJECT_DIR/docs/index.html"
         ;;
     -k|--kill)

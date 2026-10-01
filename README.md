@@ -92,9 +92,9 @@ runsteamunlocker -t <config-name>   # print the next session's wait/duration and
 runsteamunlocker -s <config-name>   # show achievements from the current session onward (names, done/next)
 runsteamunlocker -s <config-name> all  # every session; or a number for just that session
 runsteamunlocker -k                 # stop ArchiSteamFarm and any running unlocker session
-runsteamunlocker -a                 # list available jsons/config_*.json profiles
-runsteamunlocker -j                 # open the Unlock Scheduler (docs/index.html) in the browser
-runsteamunlocker -c                 # open the project in VS Code
+runsteamunlocker -a / --all         # list available jsons/config_*.json profiles
+runsteamunlocker -j / --json        # open the Unlock Scheduler (docs/index.html) in the browser
+runsteamunlocker -c / --code        # open the project in VS Code
 runsteamunlocker -h                 # help
 ```
 
