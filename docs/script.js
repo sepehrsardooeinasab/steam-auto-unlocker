@@ -346,7 +346,6 @@
     resetBtn: document.getElementById("reset-btn"),
     downloadBtn: document.getElementById("download-btn"),
     folderBtn: document.getElementById("folder-btn"),
-    forgetFolderBtn: document.getElementById("forget-folder-btn"),
     folderStatus: document.getElementById("folder-status"),
     boxTitle: document.getElementById("box-title"),
     statsStrip: document.getElementById("stats-strip"),
@@ -798,8 +797,10 @@
 
   function setFolder(handle) {
     dirHandle = handle;
-    els.folderStatus.innerHTML = handle ? 'Saving to <b>' + escapeHtml(handle.name) + "/</b>" : "";
-    els.forgetFolderBtn.style.display = handle ? "inline-block" : "none";
+    els.folderStatus.innerHTML = handle
+      ? 'Saving to <b>' + escapeHtml(handle.name) + '/</b><button class="forget-folder" type="button" ' +
+        'title="Stop saving here (use normal downloads)" aria-label="Forget save folder">×</button>'
+      : "";
   }
 
   // The chosen folder survives reloads and new windows by keeping its
@@ -899,10 +900,11 @@
         showToast("Folder selected — downloads will save there silently");
       }).catch(function () { /* user cancelled, or blocked (e.g. inside a sandboxed iframe) */ });
     });
-    els.forgetFolderBtn.addEventListener("click", function () {
+    els.folderStatus.addEventListener("click", function (e) {
+      if (!e.target.closest(".forget-folder")) return;
       setFolder(null);
       storeFolderHandle(null);
-      showToast("Save folder forgotten");
+      showToast("Save folder forgotten — downloads go to your browser's default");
     });
     loadFolderHandle().then(function (handle) { if (handle) setFolder(handle); });
   }
