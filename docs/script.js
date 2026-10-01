@@ -656,7 +656,7 @@
     armedUntil = {};
     try { localStorage.removeItem("unlock-scheduler-draft"); } catch (e) {}
     recompute();
-    render();
+    setView("input");
   }
 
   els.resetBtn.addEventListener("click", function () {
@@ -725,7 +725,7 @@
       edits = {};
       saveDraft();
       recompute();
-      render();
+      setView("input");
       showToast("Edits discarded");
       return;
     }
