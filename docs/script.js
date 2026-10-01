@@ -519,19 +519,34 @@
 
     var warnings = [];
     if (simultaneous.length) warnings.push(simultaneous.length + " timestamp(s) have multiple achievements unlocking together.");
+    // Problems that can hit many sessions/achievements are listed in one
+    // notice each rather than one notice per hit.
+    var shortGaps = [];
     split.gaps.forEach(function (g, i) {
-      if (g <= minGapSec) warnings.push("Session " + (i + 2) + " starts only " + roughDuration(g) + " after the previous one (below your min gap).");
+      if (g <= minGapSec) shortGaps.push({session: i + 2, gap: roughDuration(g)});
     });
+    if (shortGaps.length === 1) {
+      warnings.push("Session " + shortGaps[0].session + " starts only " + shortGaps[0].gap + " after the previous one (below your min gap).");
+    } else if (shortGaps.length) {
+      warnings.push(shortGaps.length + " sessions start sooner after the previous one than your min gap: " +
+        shortGaps.map(function (s) { return "session " + s.session + " (" + s.gap + ")"; }).join(", ") + ".");
+    }
+    var longWaits = [];
     split.sessions.forEach(function (session, si) {
       session.forEach(function (a, j) {
         var key = String(a.ach_id);
         if (j > 0 && (key in edits || breaks[key] === false) && a.delay > gapLimitSec) {
-          warnings.push(a.ach_name + " (session " + (si + 1) + ") waits " + roughDuration(a.delay) +
-            " after your edits, longer than your session gap limit. It stays in session " + (si + 1) +
-            ", so the game keeps running in ASF the whole time.");
+          longWaits.push(a.ach_name + " (session " + (si + 1) + ", " + roughDuration(a.delay) + ")");
         }
       });
     });
+    if (longWaits.length === 1) {
+      warnings.push(longWaits[0] + " waits longer than your session gap limit after your edits. It stays in its session, " +
+        "so the game keeps running in ASF the whole time.");
+    } else if (longWaits.length) {
+      warnings.push(longWaits.length + " achievements wait longer than your session gap limit after your edits: " +
+        longWaits.join(", ") + ". They stay in their sessions, so the game keeps running in ASF the whole time.");
+    }
     var zeroSessions = split.durations.filter(function (d) { return d <= 1; }).length;
     if (zeroSessions) warnings.push(zeroSessions + " session(s) have essentially zero duration (a single achievement).");
 
