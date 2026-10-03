@@ -113,30 +113,20 @@ def show_timeline(name, which=None):
     source = f"  ·  copied from {config['copied_from']}" if config.get("copied_from") else ""
     print(f"{name}  ·  {len(achievements)} achievements  ·  {state}{source}  ·  {where}")
 
-    header = ("#", "ACHIEVEMENT", "ID", "DELAY", "STATUS")
-    blocks = []
+    # One table of achievements. A session's first achievement shows the
+    # gap before that session in DELAY/GAP (it has no delay of its own) and
+    # the session's length in SESSION_LEN, left empty on the other rows.
+    header = ("SESSION", "SESSION_LEN", "#", "ACHIEVEMENT", "ID", "DELAY/GAP", "STATUS")
+    rows = []
     for si in shown:
-        rows = []
         for pos, i in enumerate(sessions[si]["indices"], 1):
             ach = achievements[i]
-            delay = 0 if pos == 1 and si > 0 else ach["delay"]
+            wait = sessions[si]["gap"] if pos == 1 and si > 0 else ach["delay"]
             status = "✓ done" if i <= last_completed else ("▶ next" if i == next_i else "")
-            rows.append((str(pos), names.get(str(ach["id"]), "?"), str(ach["id"]), _format_span(delay), status))
-        blocks.append((si, rows))
+            rows.append((str(si + 1), _format_span(sessions[si]["duration"]) if pos == 1 else "", str(pos),
+                         names.get(str(ach["id"]), "?"), str(ach["id"]), _format_span(wait), status))
 
-    all_rows = [header] + [r for _, rows in blocks for r in rows]
-    widths = [max(len(r[c]) for r in all_rows) for c in range(len(header))]
-
-    def line(r):
-        return "  " + "  ".join(r[c].ljust(widths[c]) for c in range(len(header))).rstrip()
-
-    for si, rows in blocks:
-        s = sessions[si]
-        if si > 0:
-            print(f"\n  ··· gap {_format_span(s['gap'])} ···")
-        count = len(s["indices"])
-        print(f"\nSession {si + 1}/{len(sessions)}  ·  {count} achievement{'s' if count != 1 else ''}"
-              f"  ·  ~{_format_span(s['duration'])}")
-        print(line(header))
-        for r in rows:
-            print(line(r))
+    widths = [max(len(r[c]) for r in [header] + rows) for c in range(len(header))]
+    print()
+    for r in [header] + rows:
+        print("  " + "  ".join(c.ljust(w) for c, w in zip(r, widths)).rstrip())
