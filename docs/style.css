@@ -1,23 +1,33 @@
   :root {
-    --bg: #0b0b0d;
-    --nav-bg: #141416;
-    --nav-border: #262629;
-    --nav-text: #8c8c92;
-    --nav-text-active: #f2f2f0;
-    --box-bg: #f5f5f2;
-    --box-bg-alt: #ebebe7;
-    --box-text: #17171a;
-    --box-text-dim: #6c6c72;
-    --box-border: #d8d8d3;
+    color-scheme: dark;
+    --bg: #17181b;
+    --surface: #1f2024;
+    --surface-2: #27282d;
+    --surface-3: #303137;
+    --border: #35363c;
+    --border-strong: #46474e;
+    --text: #ededeb;
+    --text-dim: #9a9aa1;
+    /* Input side blue, output side coral; teal stays the brand color. */
+    --input: #6aa9f0;
+    --input-tint: rgba(106, 169, 240, 0.14);
+    --output: #f08a6c;
+    --output-tint: rgba(240, 138, 108, 0.14);
     --accent: #35c9b6;
-    --accent-strong: #1fa593;
+    --accent-hover: #4fd6c4;
     --accent-contrast: #06201d;
-    --danger: #c9423b;
-    --danger-bg: #f8e6e4;
-    --warn: #b5791a;
-    --warn-bg: #f7ecd8;
-    --info: #3d6fb0;
-    --info-bg: #e3ecf7;
+    --accent-tint: rgba(53, 201, 182, 0.12);
+    --danger: #ef7a72;
+    --danger-solid: #c9423b;
+    --danger-bg: rgba(201, 66, 59, 0.14);
+    --warn: #e2a64b;
+    --warn-bg: rgba(181, 121, 26, 0.16);
+    --info: #86ade3;
+    --info-bg: rgba(61, 111, 176, 0.16);
+    --max-width: 1120px;
+    /* Height of each tab's main box (paste box, JSON preview, Timeline
+       table), so switching tabs keeps them the same size and place. */
+    --pane-box-h: clamp(280px, 52vh, 560px);
   }
 
   * { box-sizing: border-box; }
@@ -30,12 +40,12 @@
 
   body {
     margin: 0;
-    color: var(--nav-text-active);
+    color: var(--text);
     font-family: "Archivo", system-ui, sans-serif;
     min-height: 100vh;
   }
 
-  /* faint grid texture, nod to the checkerboard-collage reference */
+  /* faint grid texture behind the masthead */
   .grid-texture {
     position: fixed;
     inset: 0;
@@ -49,6 +59,7 @@
     mask-image: radial-gradient(ellipse at 50% 0%, black 0%, transparent 75%);
   }
 
+  /* Full-width rule, but the content lines up with the centered box below. */
   header.masthead {
     position: relative;
     z-index: 1;
@@ -57,8 +68,8 @@
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
-    padding: 1.1rem 1.5rem;
-    border-bottom: 1px solid var(--nav-border);
+    padding: 1.1rem max(1rem, calc((100% - var(--max-width)) / 2));
+    border-bottom: 1px solid var(--border);
   }
 
   .masthead .brand {
@@ -66,307 +77,170 @@
     font-size: 1rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--nav-text-active);
+    color: var(--text);
   }
   .masthead .brand span { color: var(--accent); }
 
   .masthead .tagline {
     font-family: "JetBrains Mono", monospace;
     font-size: 0.74rem;
-    color: var(--nav-text);
+    color: var(--text-dim);
     letter-spacing: 0.01em;
   }
 
   .shell {
     position: relative;
     z-index: 1;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 0;
-    align-items: stretch;
-    justify-content: center;
-    padding: 1.75rem 1.5rem;
-  }
-
-  @media (max-width: 900px) {
-    /* Rotate the whole console 90°: Joy-Cons become a top bar and a bottom
-       bar (the .shell grid already stacks its 3 children into one column
-       here), so collapsing should shrink height, not width, and the
-       collapse-arrow icons should point up/down, not left/right. */
-    .shell { grid-template-columns: 1fr; }
-    .side-nav {
-      width: 100% !important;
-      flex-direction: column;
-      align-items: stretch;
-      border: 1px solid var(--nav-border) !important;
-      border-bottom: none !important;
-      border-radius: 18px 18px 0 0 !important;
-      margin-bottom: -1px;
-    }
-    .side-nav.right {
-      border-top: none !important;
-      border-bottom: 1px solid var(--nav-border) !important;
-      border-radius: 0 0 18px 18px !important;
-    }
-    .side-nav .nav-items { flex-direction: row; overflow-x: auto; }
-    .side-nav.collapsed { width: 100% !important; }
-
-    .collapse-btn svg { transform: rotate(-90deg) !important; }
-    .side-nav.right .collapse-btn svg { transform: rotate(90deg) !important; }
-    .side-nav.collapsed .collapse-btn svg { transform: rotate(90deg) !important; }
-    .side-nav.collapsed.right .collapse-btn svg { transform: rotate(-90deg) !important; }
-  }
-
-  /* Docked to the box like a Joy-Con to a Switch — and colored like one:
-     Joy-Con blue on the left, Joy-Con red on the right. Rounded on the
-     outer edge, flat where each panel meets the box, flush against it
-     (no gap/shadow seam) so the three pieces read as one console. */
-  .side-nav {
-    --nav-bg: #0f6f96;
-    --nav-border: #0a4f6b;
-    --nav-text: rgba(255, 255, 255, 0.68);
-    --nav-text-active: #ffffff;
-    --accent: rgba(255, 255, 255, 0.92);
-    --accent-contrast: #073b51;
-    width: 238px;
-    background: var(--nav-bg);
-    border: 1px solid var(--nav-border);
-    border-radius: 18px 0 0 18px;
-    border-right: none;
-    padding: 1rem 0.7rem 1.25rem;
-    display: flex;
-    flex-direction: column;
-    transition: width 0.18s ease;
-  }
-  .side-nav.right {
-    --nav-bg: #a8291b;
-    --nav-border: #7a1d12;
-    --accent-contrast: #4a0f08;
-    border-radius: 0 18px 18px 0;
-    border-right: 1px solid var(--nav-border);
-    border-left: none;
-  }
-  .side-nav.collapsed { width: 86px; }
-
-  .side-nav .nav-head {
-    position: relative;
-    display: flex;
-    align-items: center;
-    min-height: 2.8rem;
-    padding: 0.3rem 0.5rem 1rem;
-    margin-bottom: 0.7rem;
-    border-bottom: 1px solid var(--nav-border);
-  }
-  .side-nav.collapsed .nav-head {
-    min-height: 2.3rem;
-    padding: 0.3rem 0.5rem 0.5rem;
-    margin-bottom: 0.35rem;
-  }
-
-  .nav-head .nav-title {
-    flex: 1;
-    padding-right: 2.1rem;
-    font-weight: 800;
-    font-size: 0.8rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--nav-text-active);
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .side-nav.right .nav-head .nav-title { padding-right: 0; padding-left: 2.1rem; }
-  .side-nav.collapsed .nav-head .nav-title { display: none; }
-
-  /* Absolutely positioned (instead of a flex sibling of nav-title) so it
-     stays in exactly the same spot whether the title is shown or hidden —
-     collapsing used to make it jump because the flex layout re-packed
-     around the now-missing title. top/bottom mirror nav-head's own
-     padding so "margin: auto 0" centers it in the same content band the
-     flex-centered title text sits in — not just the box's raw 50% mark,
-     which is off-center here since the padding itself is asymmetric. */
-  .collapse-btn {
-    position: absolute;
-    top: 0.3rem;
-    bottom: 1rem;
-    margin: auto 0;
-    right: 0.5rem;
-    flex: none;
-    width: 24px; height: 24px;
-    border-radius: 50%;
-    border: 1px solid var(--nav-border);
-    background: rgba(0,0,0,0.1);
-    color: var(--nav-text-active);
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-  }
-  .side-nav.right .collapse-btn { right: auto; left: 0.5rem; }
-  .side-nav.collapsed .collapse-btn { bottom: 0.5rem; }
-  .collapse-btn svg { width: 12px; height: 12px; transition: transform 0.18s ease; }
-  .side-nav.right .collapse-btn svg { transform: rotate(180deg); }
-  .side-nav.collapsed .collapse-btn svg { transform: rotate(180deg); }
-  .side-nav.collapsed.right .collapse-btn svg { transform: rotate(0deg); }
-  .collapse-btn:hover { background: rgba(0,0,0,0.22); }
-
-  .side-nav .nav-label {
-    font-size: 0.68rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--nav-text);
-    padding: 0 0.8rem;
-    margin-bottom: 0.5rem;
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .side-nav.collapsed .nav-label { display: none; }
-
-  .nav-items { display: flex; flex-direction: column; gap: 0.2rem; }
-
-  .nav-item {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    width: 100%;
-    background: none;
-    border: none;
-    border-radius: 13px;
-    color: var(--nav-text);
-    font-family: "Archivo", sans-serif;
-    font-weight: 600;
-    font-size: 0.8rem;
-    text-align: left;
-    padding: 0.6rem 0.8rem;
-    cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease;
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .side-nav.collapsed .nav-item { justify-content: center; padding: 0.6rem; }
-  .side-nav.collapsed .nav-item .label { display: none; }
-
-  .nav-item .icon { flex: none; width: 19px; height: 19px; display: flex; align-items: center; justify-content: center; }
-  .nav-item .icon svg { width: 100%; height: 100%; }
-  .nav-item .label { overflow: hidden; text-overflow: ellipsis; }
-
-  .nav-item:hover { color: var(--nav-text-active); background: rgba(255,255,255,0.14); }
-  .nav-item.active { color: var(--accent-contrast); background: var(--accent); }
-  .nav-item.has-content:not(.active) .icon { color: var(--nav-text-active); }
-  .nav-item:focus-visible { outline: 2px solid var(--nav-text-active); outline-offset: 2px; }
-
-  main.stage {
-    display: flex;
-    align-items: stretch;
-    justify-content: center;
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 1.5rem 1rem 2.5rem;
   }
 
   .box {
-    background: var(--box-bg);
-    color: var(--box-text);
-    width: 100%;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 12px;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
     box-shadow: 0 30px 60px -30px rgba(0,0,0,0.6);
   }
+  /* Color strip across the top: input blue → teal → output coral. */
+  .box::before {
+    content: "";
+    display: block;
+    height: 3px;
+    background: linear-gradient(90deg, var(--input), var(--accent) 50%, var(--output));
+  }
 
+  /* ---- tab bar: Input tabs on the left, Output tabs on the right,
+     stats in between (or on their own row when there's no room) ---- */
   .box-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.9rem 1.3rem;
-    border-bottom: 1px solid var(--box-border);
+    gap: 0.5rem 1rem;
+    padding: 0.55rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.12);
     flex-wrap: wrap;
   }
-  .box-header .title {
+
+  .tab-group { display: flex; align-items: center; gap: 0.15rem; }
+  .tab-group.input { --group: var(--input); --group-tint: var(--input-tint); }
+  .tab-group.output { --group: var(--output); --group-tint: var(--output-tint); }
+  .tab-group-label {
+    font-size: 0.64rem;
     font-weight: 700;
-    font-size: 0.95rem;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
+    color: var(--group);
+    padding: 0 0.45rem 0 0.2rem;
   }
+
+  button.tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 0.84rem;
+    letter-spacing: 0;
+    text-transform: none;
+    padding: 0.42rem 0.7rem;
+    white-space: nowrap;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .tab .icon { flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+  .tab .icon svg { width: 100%; height: 100%; }
+  .tab:hover { color: var(--text); background: var(--surface-2); }
+  .tab.active {
+    color: var(--group);
+    background: var(--group-tint);
+    border-color: color-mix(in srgb, var(--group) 35%, transparent);
+  }
+  /* Output tabs get a small dot once there's something to look at. */
+  .tab.has-content:not(.active)::after {
+    content: "";
+    position: absolute;
+    top: 0.35rem;
+    right: 0.3rem;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--group);
+  }
+
   .box-header .stats-strip {
     display: flex;
-    gap: 1.2rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.3rem 1.1rem;
     font-family: "JetBrains Mono", monospace;
     font-size: 0.72rem;
-    color: var(--box-text-dim);
+    color: var(--text-dim);
   }
-  .box-header .stats-strip b { color: var(--box-text); font-weight: 600; }
+  .box-header .stats-strip b { color: var(--accent); font-weight: 600; }
+  /* Not enough room between the two groups: stats drop to their own row. */
+  @media (max-width: 1060px) {
+    .box-header .stats-strip { order: 3; width: 100%; justify-content: flex-start; padding: 0 0.3rem 0.1rem; }
+  }
 
-  /* Fixed height (or, on desktop, the console's height) so switching tabs
-     (text/settings/json/csv) never resizes the box.
-
-     The main box of each tab (paste box, JSON preview, Timeline table) is
-     sized from this screen — its height minus one line for the help link
-     under it — so it sits in the same place at the same size on every
-     tab; notices below it scroll into view. */
+  /* Tall enough for a pane's main box plus the help link under it, so the
+     box keeps the same size on every tab. */
   .box-content {
-    padding: 1.3rem;
-    height: 480px;
-    overflow-y: auto;
-    container-type: size;
-    --pane-box-h: max(200px, calc(100cqh - 2.2rem));
+    padding: 1.2rem 1.3rem;
+    min-height: calc(var(--pane-box-h) + 5rem);
   }
 
   .view-pane { display: none; }
   .view-pane.active { display: block; }
   .view-pane[data-view="input"] > .field { margin-bottom: 0; }
-
-  /* On desktop the console is sized to the window (~83% of its height),
-     like a Switch filling the view; the box's screen stretches with it.
-     Below a usable height the page scrolls instead. */
-  @media (min-width: 901px) {
-    body { display: flex; flex-direction: column; height: 100vh; }
-    header.masthead { flex: none; }
-    .shell {
-      /* console itself is ~83% of the window; centered in the space left */
-      flex: none;
-      height: calc(83vh + 2rem);
-      margin: auto 0;
-      min-height: 560px;
-      grid-template-rows: minmax(0, 1fr);
-      padding: 1rem 1.5rem;
-    }
-    .box { height: 100%; }
-    .box-content { flex: 1; height: auto; min-height: 0; }
-  }
+  .view-pane[data-view="settings"] { max-width: 640px; }
 
   label {
     display: block;
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--box-text-dim);
+    color: var(--text-dim);
     margin-bottom: 0.4rem;
   }
   .field { margin-bottom: 1.1rem; }
-  .field small { display: block; margin-top: 0.3rem; font-size: 0.74rem; color: var(--box-text-dim); }
+  .field small { display: block; margin-top: 0.3rem; font-size: 0.74rem; color: var(--text-dim); }
 
   textarea, input[type="text"], input[type="number"] {
     width: 100%;
-    background: #fff;
-    border: 1px solid var(--box-border);
-    border-radius: 3px;
-    color: var(--box-text);
-    padding: 0.55rem 0.65rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text);
+    padding: 0.55rem 0.7rem;
     font-family: "JetBrains Mono", monospace;
     font-size: 0.85rem;
   }
+  textarea::placeholder, input::placeholder { color: #75767d; }
   /* The pasted export is prose (achievement names/descriptions), not code
      or data — a plain readable face suits it better than the mono font
      used for IDs and file previews. */
   textarea {
+    display: block;
     height: var(--pane-box-h);
     resize: none;
     line-height: 1.5;
     font-family: "Archivo", sans-serif;
-    font-size: 0.78rem;
+    font-size: 0.82rem;
     font-weight: 500;
+    padding: 0.8rem 0.9rem;
   }
   input[type="number"] { font-variant-numeric: tabular-nums; }
-  textarea:focus, input:focus { outline: none; border-color: var(--accent-strong); box-shadow: 0 0 0 3px rgba(53,201,182,0.18); }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
 
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
   @media (max-width: 480px) { .row2 { grid-template-columns: 1fr; } }
@@ -379,22 +253,23 @@
     text-align: center;
     gap: 0.5rem;
     padding: 4rem 1rem;
-    color: var(--box-text-dim);
+    color: var(--text-dim);
   }
-  .empty-hint .glyph { font-size: 2rem; font-weight: 800; color: var(--box-border); }
+  .empty-hint .glyph { font-size: 2rem; font-weight: 800; color: var(--border-strong); }
   .empty-hint p { max-width: 30ch; font-size: 0.88rem; margin: 0; }
 
   .notice {
     display: flex;
     gap: 0.55rem;
     align-items: flex-start;
-    border-radius: 3px;
+    border-radius: 7px;
     padding: 0.6rem 0.8rem;
     font-size: 0.82rem;
     margin-bottom: 0.6rem;
   }
   .notice.warn { background: var(--warn-bg); color: var(--warn); }
   .notice.danger { background: var(--danger-bg); color: var(--danger); }
+  .notice.info { background: var(--info-bg); color: var(--info); }
   #input-alert-slot .notice, .notices-below .notice { margin: 0.6rem 0 0; }
   .visually-hidden {
     position: absolute;
@@ -403,73 +278,75 @@
     overflow: hidden;
     clip: rect(0 0 0 0);
     white-space: nowrap;
+    margin: 0;
   }
-  .notice.info { background: var(--info-bg); color: var(--info); }
 
   pre.file-preview {
     margin: 0;
-    background: var(--box-bg-alt);
-    border: 1px solid var(--box-border);
-    border-radius: 3px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
     padding: 0.9rem 1rem;
     font-family: "JetBrains Mono", monospace;
     font-size: 0.78rem;
     line-height: 1.55;
     overflow: auto;
     height: var(--pane-box-h);
-    color: var(--box-text);
+    color: var(--text);
   }
-  .tok-key { color: var(--accent-strong); }
+  .tok-key { color: var(--accent); }
   .tok-num { color: var(--info); }
   .tok-bool { color: var(--danger); }
 
   .table-wrap {
-    overflow-x: auto;
+    overflow: auto;
     height: var(--pane-box-h);
-    overflow-y: auto;
-    border: 1px solid var(--box-border);
-    border-radius: 3px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
   }
   table.csv-table {
     width: 100%;
     border-collapse: collapse;
     font-family: "JetBrains Mono", monospace;
     font-size: 0.76rem;
-    color: var(--box-text);
+    color: var(--text);
   }
   table.csv-table th {
     position: sticky;
     top: 0;
-    background: var(--box-text);
-    color: var(--box-bg);
+    z-index: 1;
+    background: var(--surface-3);
+    color: var(--text-dim);
     text-align: left;
     padding: 0.5rem 0.7rem;
     font-weight: 600;
     letter-spacing: 0.02em;
     white-space: nowrap;
+    border-bottom: 1px solid var(--border-strong);
   }
   table.csv-table td {
     padding: 0.4rem 0.7rem;
-    border-bottom: 1px solid var(--box-border);
+    border-bottom: 1px solid var(--border);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
-    color: var(--box-text);
+    color: var(--text);
   }
-  table.csv-table tbody tr:nth-child(even) { background: var(--box-bg-alt); }
-  table.csv-table tbody tr:hover { background: rgba(53,201,182,0.1); }
+  table.csv-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.018); }
+  table.csv-table tbody tr:hover { background: var(--accent-tint); }
   table.csv-table tr.gap-row td {
     background: var(--info-bg);
     color: var(--info);
     font-style: italic;
   }
   table.csv-table tr.meta-row td {
-    color: var(--box-text-dim);
+    color: var(--text-dim);
     font-style: italic;
   }
   table.csv-table tr.session-row td {
-    background: var(--box-bg-alt);
+    background: var(--output-tint);
+    color: var(--output);
     font-weight: 700;
-    border-top: 2px solid var(--box-border);
+    border-top: 2px solid color-mix(in srgb, var(--output) 35%, transparent);
   }
 
   td.delay-cell.editable {
@@ -477,7 +354,7 @@
     text-decoration: underline dotted;
     text-underline-offset: 3px;
   }
-  td.delay-cell.editable:hover { color: var(--accent-strong); }
+  td.delay-cell.editable:hover { color: var(--accent); }
   table.csv-table td.delay-cell.edited,
   table.csv-table tr.gap-row td.delay-cell.edited,
   table.csv-table tr.session-row td.delay-cell.edited {
@@ -490,7 +367,7 @@
     margin-left: 0.4rem;
     padding: 0 0.3rem;
     border: 1px solid currentColor;
-    border-radius: 3px;
+    border-radius: 4px;
     background: transparent;
     color: inherit;
     font: inherit;
@@ -500,10 +377,10 @@
   .gap-btn {
     margin-left: 0.4rem;
     padding: 0 0.3rem;
-    border: 1px solid var(--box-border);
-    border-radius: 3px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
     background: transparent;
-    color: var(--box-text-dim);
+    color: var(--text-dim);
     font: inherit;
     font-style: normal;
     line-height: 1.2;
@@ -511,7 +388,7 @@
     opacity: 0.55;
   }
   tr:hover .gap-btn, .gap-btn:focus-visible, .gap-btn.edited { opacity: 1; }
-  .gap-btn:hover { border-color: var(--accent-strong); color: var(--accent-strong); }
+  .gap-btn:hover { border-color: var(--accent); color: var(--accent); }
   .gap-btn.edited {
     background: var(--warn-bg);
     border-color: var(--warn);
@@ -543,48 +420,48 @@
   .box-footer {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    padding: 1rem 1.3rem;
-    border-top: 1px solid var(--box-border);
+    gap: 0.6rem;
+    padding: 0.8rem 1.3rem;
+    border-top: 1px solid var(--border);
+    background: rgba(255,255,255,0.012);
     flex-wrap: wrap;
   }
 
   button {
     font-family: "Archivo", sans-serif;
-    font-weight: 700;
-    font-size: 0.78rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    border-radius: 3px;
+    font-weight: 600;
+    font-size: 0.84rem;
+    border-radius: 7px;
     border: 1px solid transparent;
-    padding: 0.6rem 1rem;
+    padding: 0.55rem 1rem;
     cursor: pointer;
-    transition: filter 0.12s ease, background 0.12s ease;
+    transition: filter 0.12s ease, background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   }
-  button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  .btn-primary { background: var(--box-text); color: var(--box-bg); }
-  .btn-primary:hover:not(:disabled) { background: var(--accent-strong); color: #fff; }
-  .btn-primary.btn-danger { background: var(--danger); color: #fff; box-shadow: 0 0 0 3px var(--danger-bg); }
-  .btn-primary.btn-danger:hover:not(:disabled) { background: var(--danger); filter: brightness(0.9); }
+  .btn-primary { background: var(--accent); color: var(--accent-contrast); }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+  .btn-primary:disabled { background: var(--surface-3); color: var(--text-dim); opacity: 1; }
+  .btn-primary.btn-danger { background: var(--danger-solid); color: #fff; box-shadow: 0 0 0 3px var(--danger-bg); }
+  .btn-primary.btn-danger:hover:not(:disabled) { background: var(--danger-solid); filter: brightness(1.1); }
 
-  .btn-ghost { background: transparent; border-color: var(--box-border); color: var(--box-text-dim); }
-  .btn-ghost:hover:not(:disabled) { border-color: var(--box-text-dim); color: var(--box-text); }
+  .btn-ghost { background: transparent; border-color: var(--border-strong); color: var(--text-dim); }
+  .btn-ghost:hover:not(:disabled) { border-color: var(--text-dim); color: var(--text); }
 
   .folder-status {
     font-family: "JetBrains Mono", monospace;
     font-size: 0.72rem;
-    color: var(--box-text-dim);
+    color: var(--text-dim);
     margin-left: auto;
   }
-  .folder-status b { color: var(--accent-strong); }
+  .folder-status b { color: var(--accent); }
   .forget-folder {
     margin-left: 0.3rem;
     padding: 0 0.25rem;
     border: none;
     background: transparent;
-    color: var(--box-text-dim);
+    color: var(--text-dim);
     font: inherit;
     font-size: 0.9rem;
     line-height: 1;
@@ -592,17 +469,17 @@
   }
   .forget-folder:hover { color: var(--danger); }
 
-  details.hint { margin-top: 0.8rem; font-size: 0.82rem; color: var(--box-text-dim); }
-  details.hint summary { cursor: pointer; color: var(--accent-strong); font-weight: 600; }
+  details.hint { margin-top: 0.8rem; font-size: 0.82rem; color: var(--text-dim); }
+  details.hint summary { cursor: pointer; color: var(--accent); font-weight: 600; }
   details.hint ul { margin: 0.5rem 0 0; padding-left: 1.2rem; line-height: 1.5; }
   details.hint pre {
-    background: var(--box-bg-alt);
-    border: 1px solid var(--box-border);
-    border-radius: 3px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
     padding: 0.6rem 0.7rem;
     font-family: "JetBrains Mono", monospace;
     font-size: 0.72rem;
-    color: var(--box-text-dim);
+    color: var(--text-dim);
     overflow-x: auto;
     margin-top: 0.5rem;
   }
@@ -615,13 +492,13 @@
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    background: var(--nav-bg);
-    border: 1px solid var(--nav-border);
-    color: var(--nav-text-active);
+    background: var(--surface-3);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
     padding: 0.6rem 1rem;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.82rem;
-    box-shadow: 0 12px 32px -16px rgba(0,0,0,0.6);
+    box-shadow: 0 12px 32px -16px rgba(0,0,0,0.7);
     transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
     z-index: 20;
   }
@@ -630,4 +507,17 @@
     visibility: visible;
     transform: translateX(-50%) translateY(0);
     transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  @media (max-width: 640px) {
+    .box-header { padding: 0.5rem; }
+    .tab-group-label { display: none; }
+    button.tab { padding: 0.42rem 0.55rem; }
+    .box-content { padding: 1rem; }
+    .box-footer { padding: 0.8rem 1rem; }
+    .folder-status { margin-left: 0; width: 100%; }
+  }
+  /* Phones: only the open tab keeps its label, so all four fit. */
+  @media (max-width: 480px) {
+    .tab:not(.active) .label { display: none; }
   }
