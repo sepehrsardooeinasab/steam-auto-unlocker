@@ -1,3 +1,4 @@
+import os
 import sys
 import json
 import shutil
@@ -62,7 +63,15 @@ def load_progress(path):
 
 
 def save_progress(path, progress):
-    path.write_text(json.dumps(progress, indent=2))
+    """Writes to a temp file and renames it over the real one, which is
+    atomic: a signal or crash mid-write leaves the old file intact instead
+    of a truncated one that can't be parsed."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w") as f:
+        f.write(json.dumps(progress, indent=2))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 def cleanup_profile(game_name):

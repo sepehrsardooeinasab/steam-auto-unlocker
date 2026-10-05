@@ -94,6 +94,10 @@ The defaults work with the setup above. To change any of them, copy `settings.ex
 
 With randomness on, it applies to the delays between achievements and to the gaps between sessions. The random value is picked when that delay is scheduled and saved with your progress, so stopping and resuming doesn't pick a new one. Unlocks that happened together in the source data (see `simultaneous_max_delay`) are still sent together. Estimates such as `-t`, `-ls` and the session length shown before you confirm still use the config's exact values.
 
+### 8. Safety checks
+
+- **Safe progress saves:** progress is written to a temporary file and then swapped in, so stopping a run mid-save can't corrupt it.
+
 ## Layout
 
 - `unlocker/` — the Python package that drives unlocking:
