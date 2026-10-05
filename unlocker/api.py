@@ -1,13 +1,29 @@
 import json
+import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-API_URL = "http://127.0.0.1:1243/Api/Command"
-BOT_CONNECT_TIMEOUT = 60
+from unlocker.settings import SETTINGS
+
+API_URL = f"http://127.0.0.1:{SETTINGS['asf_port']}/Api/Command"
+BOT_CONNECT_TIMEOUT = SETTINGS["bot_connect_timeout"]
+# Extra request headers, fed to curl on stdin (-H @-) rather than as an
+# argument, so the IPC password never shows up in `ps` output.
+API_HEADERS = (f"Authentication: {SETTINGS['ipc_password']}\n"
+               if SETTINGS["ipc_password"] else "")
+
+
+def api_request_args(command):
+    """(argv, stdin) for a curl call sending one command to ASF's IPC."""
+    return (["curl", "-s", "-X", "POST", API_URL,
+             "-H", "Content-Type: application/json", "-H", "@-",
+             "-d", json.dumps({"Command": command})],
+            API_HEADERS)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ASF_DIR = PROJECT_ROOT / "archifarm"
@@ -15,25 +31,47 @@ ASF_BINARY = ASF_DIR / "ArchiSteamFarm"
 ASF_LOG = ASF_DIR / "log.txt"
 
 
-def _stop_other_asf_instances():
-    """Kills any running ArchiSteamFarm process that isn't this project's
-    own. Steam only allows one active login per account, and bot1 here may
-    share its account with other ASF installs on this machine — leaving
-    one of those running would otherwise make this one hang forever trying
-    to connect."""
+def _ps(pid, field):
+    return subprocess.run(
+        ["ps", "-p", pid, "-o", f"{field}="], capture_output=True, text=True).stdout.strip()
+
+
+def other_asf_instances():
+    """[(pid, command)] for every running ArchiSteamFarm that isn't this
+    project's own. Only real ASF processes count — the native binary, or
+    `dotnet ArchiSteamFarm.dll` — not anything that merely mentions the
+    name, like `tail -f .../ArchiSteamFarm/log.txt` or an editor."""
     pids = subprocess.run(
         ["pgrep", "-f", "ArchiSteamFarm"], capture_output=True, text=True).stdout.split()
-    own_binary = str(ASF_BINARY)
-    stopped = False
+    found = []
     for pid in pids:
-        cmdline = subprocess.run(
-            ["ps", "-p", pid, "-o", "command="], capture_output=True, text=True).stdout
-        if own_binary not in cmdline:
-            subprocess.run(["kill", pid])
-            stopped = True
-    if stopped:
-        print("Stopped another running ArchiSteamFarm instance (same Steam account).")
-        time.sleep(3)
+        command = _ps(pid, "command")
+        executable = os.path.basename(_ps(pid, "comm"))
+        is_asf = (executable.startswith("ArchiSteamFarm")
+                  or (executable == "dotnet" and "ArchiSteamFarm.dll" in command))
+        if is_asf and str(ASF_BINARY) not in command:
+            found.append((pid, command))
+    return found
+
+
+def _stop_other_asf_instances():
+    """Stops other ArchiSteamFarm instances, when stop_other_asf is on.
+    Steam only allows one active login per account, and bot1 here may share
+    its account with other ASF installs on this machine — leaving one of
+    those running would otherwise make this one hang forever trying to
+    connect. With the setting off, they're left alone with a warning."""
+    others = other_asf_instances()
+    if not others:
+        return
+    if not SETTINGS["stop_other_asf"]:
+        for pid, command in others:
+            print(f"Warning: another ArchiSteamFarm is running (PID {pid}: {command}). "
+                  "If it uses the same Steam account, the bot can't connect.")
+        return
+    for pid, command in others:
+        print(f"Stopping another ArchiSteamFarm (PID {pid}: {command}).")
+        subprocess.run(["kill", pid])
+    time.sleep(3)
 
 
 def ensure_asf_running():
@@ -54,23 +92,53 @@ def ensure_asf_running():
             start_new_session=True)
 
 
-def start_caffeinate():
-    """Starts `caffeinate` to keep the system (and display) from sleeping
-    or locking for the duration of a run. No-op if caffeinate isn't
-    installed (only macOS ships it) — returns None in that case, and callers
-    should skip printing anything about it."""
-    if shutil.which("caffeinate") is None:
+def start_keep_awake():
+    """Keeps the system (and display) from sleeping or locking for the
+    duration of a run: `caffeinate` on macOS, `systemd-inhibit` on Linux.
+    Returns the process to hand to stop_keep_awake(), or None if neither
+    tool is available or the inhibitor couldn't be taken — callers should
+    skip printing anything about it then.
+
+    Either way the process watches this one and exits on its own once it's
+    gone, so a run that's force-killed (kill -9, Force Quit) — which never
+    gets to call stop_keep_awake() — can't leave the system awake forever."""
+    pid = str(os.getpid())
+    if shutil.which("caffeinate"):
+        # -w: exit when that process exits.
+        cmd = ["caffeinate", "-d", "-i", "-m", "-s", "-w", pid]
+    elif shutil.which("systemd-inhibit"):
+        # Holds the sleep/idle inhibitor for as long as the wrapped command
+        # runs; the command polls this process and ends once it's gone.
+        cmd = ["systemd-inhibit", "--what=sleep:idle", "--mode=block",
+               "--who=Steam unlocker", "--why=Unlocking achievements",
+               "sh", "-c", 'while kill -0 "$0" 2>/dev/null; do sleep 5; done', pid]
+    else:
         return None
-    return subprocess.Popen(
-        ["caffeinate", "-d", "-i", "-m", "-s"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Own process group, so stopping it also takes down systemd-inhibit's
+    # child instead of orphaning it.
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    # systemd-inhibit exits right away when it isn't allowed to take the
+    # inhibitor (e.g. no logind session) — report that as unavailable.
+    try:
+        proc.wait(timeout=0.5)
+        return None
+    except subprocess.TimeoutExpired:
+        return proc
 
 
-def stop_caffeinate(proc):
-    """Stops a caffeinate process started by start_caffeinate(), if any."""
+def stop_keep_awake(proc):
+    """Stops a process started by start_keep_awake(), if any."""
     if proc is None:
         return
-    proc.terminate()
+    if proc.poll() is None:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        # Already gone. macOS reports a group whose only member has exited
+        # but not been reaped yet as EPERM rather than ESRCH.
+        except (ProcessLookupError, PermissionError):
+            pass
     proc.wait()
 
 
@@ -162,7 +230,7 @@ def send_command(command):
     Steam session is fully ready). Bailing out on the first attempt instead
     would let that exception text be mistaken for real (e.g. empty-looking)
     command output by callers like send_alist."""
-    payload = json.dumps({"Command": command})
+    argv, headers = api_request_args(command)
     deadline = time.monotonic() + BOT_CONNECT_TIMEOUT
     printed_waiting = False
     reconnected = False
@@ -170,10 +238,7 @@ def send_command(command):
     while True:
         try:
             proc = subprocess.run(
-                ["curl", "-s", "-X", "POST", API_URL,
-                 "-H", "Content-Type: application/json",
-                 "-d", payload],
-                capture_output=True, text=True, timeout=30)
+                argv, input=headers, capture_output=True, text=True, timeout=30)
             response = json.loads(proc.stdout)
         except (subprocess.TimeoutExpired, json.JSONDecodeError):
             response = None

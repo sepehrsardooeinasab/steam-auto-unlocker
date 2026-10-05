@@ -21,7 +21,7 @@ Runs on macOS and Linux (not Windows).
 - Download and set up [ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm).
 - Download [ASFAchievementManager](https://github.com/CatPoweredPlugins/ASFAchievementManager) and drop it into ASF's `plugins/` folder.
 - Create a bot following ASF's own setup instructions. ASF supports running multiple bots, but this project only assumes a single one (`bot1`) — unlocking achievements on your own account doesn't need more.
-- **Required:** create `archifarm/config/IPC.config` so ASF's local API listens on port `1243` — the port `unlocker/api.py` talks to, not ASF's default `1242`. This keeps it off the default port so it can't collide with any other ASF instance you might run (e.g. one used for card farming); the unlocker won't be able to reach ASF at all without it.
+- **Required:** create `archifarm/config/IPC.config` so ASF's local API listens on port `1243` — the port the unlocker talks to by default (changeable with `asf_port` in [Settings](#7-settings-optional)), not ASF's default `1242`. This keeps it off the default port so it can't collide with any other ASF instance you might run (e.g. one used for card farming); the unlocker won't be able to reach ASF at all without it.
   ```json
   {
       "Kestrel": {
@@ -68,12 +68,47 @@ The unlocker sends a desktop notification when a session finishes, when every ac
 - **macOS, basic (no install):** if `terminal-notifier` isn't installed, a plain notification is shown through `osascript`, with no logo and no auto-removal. If nothing appears, allow notifications for **Script Editor** in System Settings → Notifications.
 - **Linux:** needs `notify-send`. Install `libnotify-bin` on Debian/Ubuntu, or `libnotify` on Fedora/Arch. Errors are marked critical. "Done" notifications ask to expire after 30 minutes, though some desktops (e.g. GNOME) ignore that. Sounds depend on your desktop.
 
+### 6. Keeping the system awake
+
+While a session runs (including any `-w` / `-in` wait before it), the unlocker keeps the computer from sleeping so delays aren't stretched by a suspended machine.
+
+- **macOS:** uses the built-in `caffeinate`. Nothing to install.
+- **Linux:** uses `systemd-inhibit` (part of systemd) to hold a sleep/idle inhibitor. If it's missing or can't take the inhibitor (e.g. no logind session), the run goes ahead without it. Closing a laptop lid may still suspend it, depending on your desktop's lid settings.
+
+### 7. Settings (optional)
+
+The defaults work with the setup above. To change any of them, copy `settings.example.json` to `settings.json` (gitignored) and keep only the keys you want to change. An unknown key or a wrong type stops the unlocker with an error, so a typo never quietly falls back to a default.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `asf_port` | `1243` | Port ASF's IPC listens on. Must match `IPC.config`. |
+| `ipc_password` | `null` | ASF's `IPCPassword` from `ASF.json`, if you set one. |
+| `bot_connect_timeout` | `60` | Seconds a command keeps retrying while ASF starts or the bot connects to Steam. |
+| `warm_settle_delay` | `10` | Seconds between `play` and the first unlock when the bot was already connected. |
+| `reconnect_settle_delay` | `60` | The same pause after a fresh (re)connect. Shorter values have produced offline-looking timestamps. |
+| `simultaneous_max_delay` | `1` | Unlocks this many seconds apart or less are sent together in a single `aset`. |
+| `asf_shutdown_delay` | `300` | Seconds after a session ends before ASF is shut down, if it's idle. |
+| `stop_other_asf` | `true` | Stops other ArchiSteamFarm installs on this machine when a session starts, since Steam allows only one login per account. Turn it off if they use other accounts (e.g. a card-farming install). Either way, they're listed before you confirm. |
+| `jitter_enabled` | `false` | Turns on randomness, so a run doesn't replay the source player's timings to the second. |
+| `jitter_min_delay` | `60` | Only delays longer than this many seconds get randomness. Shorter ones are kept exact. |
+| `jitter_percent` | `10` | How far a delay can move, in either direction, as a percentage of itself (0–100). With the defaults, a 10-minute delay becomes anywhere from 9 to 11 minutes. |
+
+With randomness on, it applies to the delays between achievements and to the gaps between sessions. The random value is picked when that delay is scheduled and saved with your progress, so stopping and resuming doesn't pick a new one. Unlocks that happened together in the source data (see `simultaneous_max_delay`) are still sent together. Estimates such as `-t`, `-ls` and the session length shown before you confirm still use the config's exact values.
+
+### 8. Safety checks
+
+- **Config check:** before anything else, the config is checked for a valid `appid` and, on every achievement, a whole-number `id` (no duplicates), a `delay` of 0 or more and a true/false `new_session`. A broken config stops with a list of what's wrong, instead of failing partway through a session.
+- **Config changed:** progress is saved as a position in the config's achievement list, together with a fingerprint of that list's order. If the order changes later (e.g. you regenerate the config from another player), you're asked before continuing, and `-f` refuses. Editing delays or session breaks doesn't count as a change. `-ls` and `-s` show the same warning.
+- **One run at a time:** the same game can't run twice at once. While a session is talking to ASF, other games wait too, since ASF can only play one game at a time. Running another game then is refused, while `-w` / `-in` wait for the first session to finish. `-ls` shows a running game as `running now`. The locks are released automatically when a run exits, even if it's killed.
+- **Safe progress saves:** progress is written to a temporary file and then swapped in, so stopping a run mid-save can't corrupt it.
+
 ## Layout
 
 - `unlocker/` — the Python package that drives unlocking:
   - `runner.py` — the unlock loop: delays, session breaks, resuming from saved progress
   - `api.py` — talks to ArchiSteamFarm's local Web API (`aset`, `play`, `reset`)
   - `state.py` — reads/writes `jsons/config_*.json` and `jsons/progress_*.json`
+  - `settings.py` — defaults for `settings.json` and its validation
   - `run_unlocker.py` — CLI entry point
 - `runsteamunlocker` — bash launcher: starts ArchiSteamFarm if needed, then runs the unlocker for a given config
 - `runsteamunlocker.zsh-completion` — tab-completion for available configs

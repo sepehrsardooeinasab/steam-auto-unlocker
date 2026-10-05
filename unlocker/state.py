@@ -1,3 +1,6 @@
+import fcntl
+import hashlib
+import os
 import sys
 import json
 import shutil
@@ -14,7 +17,14 @@ DEFAULT_PROGRESS = {
     "last_completed": -1,
     "next_unlock_at": None,
     "session_ends_at": None,
+    # Fingerprint of the config's achievement order when progress was saved
+    # (see config_fingerprint). None in progress files from before it existed.
+    "config_hash": None,
 }
+
+# Held while a session talks to ASF, by whichever game is running: ASF can
+# only "play" one game at a time.
+SESSION_LOCK = JSONS_DIR / ".session.lock"
 
 
 def profile_paths(game_name):
@@ -42,17 +52,70 @@ def list_profiles():
     return profiles
 
 
+def config_problems(config):
+    """Everything wrong with a config's shape, as messages (empty when it's
+    fine) — checked up front so a bad field can't surface as a KeyError
+    halfway through a session, after "play" was already sent."""
+    if not isinstance(config, dict):
+        return ["the file must be a JSON object"]
+    problems = []
+    appid = config.get("appid")
+    if isinstance(appid, bool) or not isinstance(appid, int) or appid <= 0:
+        problems.append(f"appid must be a positive whole number (got {appid!r})")
+
+    achievements = config.get("achievements")
+    if not isinstance(achievements, list) or not achievements:
+        return problems + ["no achievements found"]
+
+    seen = set()
+    for n, ach in enumerate(achievements, 1):
+        where = f"achievement #{n}"
+        if not isinstance(ach, dict):
+            problems.append(f"{where} isn't an object")
+            continue
+        ach_id, delay, new_session = ach.get("id"), ach.get("delay"), ach.get("new_session")
+        if isinstance(ach_id, bool) or not isinstance(ach_id, int) or ach_id <= 0:
+            problems.append(f"{where}: id must be a positive whole number (got {ach_id!r})")
+        elif ach_id in seen:
+            problems.append(f"{where}: id {ach_id} appears more than once")
+        else:
+            seen.add(ach_id)
+        if isinstance(delay, bool) or not isinstance(delay, int) or delay < 0:
+            problems.append(f"{where}: delay must be a whole number of seconds, 0 or more (got {delay!r})")
+        if not isinstance(new_session, bool):
+            problems.append(f"{where}: new_session must be true or false (got {new_session!r})")
+    return problems
+
+
 def load_config(path):
     if not path.exists():
         print(f"Missing {path}")
         sys.exit(1)
 
-    config = json.loads(path.read_text())
-    if not config.get("achievements"):
-        print("No achievements found in config.")
+    try:
+        config = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        print(f"{path.name} isn't valid JSON ({e}).")
+        sys.exit(1)
+    problems = config_problems(config)
+    if problems:
+        print(f"{path.name} has problems:")
+        for problem in problems[:10]:
+            print(f"  - {problem}")
+        if len(problems) > 10:
+            print(f"  ...and {len(problems) - 10} more.")
         sys.exit(1)
 
     return config
+
+
+def config_fingerprint(config):
+    """Short hash of the appid and the order of achievement ids. Progress is
+    stored as a position in that list, so a change here means the saved
+    position may now point at a different achievement. Delay and session
+    edits don't change it, since they leave every position in place."""
+    ids = [a["id"] for a in config["achievements"]]
+    return hashlib.sha256(json.dumps([config["appid"], ids]).encode()).hexdigest()[:16]
 
 
 def load_progress(path):
@@ -62,7 +125,65 @@ def load_progress(path):
 
 
 def save_progress(path, progress):
-    path.write_text(json.dumps(progress, indent=2))
+    """Writes to a temp file and renames it over the real one, which is
+    atomic: a signal or crash mid-write leaves the old file intact instead
+    of a truncated one that can't be parsed."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w") as f:
+        f.write(json.dumps(progress, indent=2))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+_held_locks = []  # open lock files, kept referenced so they stay locked
+
+
+def acquire_lock(path, label, block=False):
+    """Takes an exclusive lock on path, recording label and this PID in it.
+    Returns True once held — until this process exits, even if it's killed,
+    since the OS drops the lock with the process. Without block, returns
+    False straight away when another process holds it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = open(path, "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | (0 if block else fcntl.LOCK_NB))
+    except BlockingIOError:
+        f.close()
+        return False
+    f.seek(0)
+    f.truncate()
+    f.write(f"{os.getpid()} {label}\n")
+    f.flush()
+    _held_locks.append(f)
+    return True
+
+
+def release_locks():
+    """Releases every lock acquire_lock() took in this process."""
+    while _held_locks:
+        _held_locks.pop().close()
+
+
+def lock_holder(path):
+    """'<label> (PID <pid>)' for the process holding path's lock, or None if
+    nobody holds it. Read-only: never takes the lock for longer than the
+    check itself."""
+    if not path.exists():
+        return None
+    with open(path, "a+") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            f.seek(0)
+            pid, _, label = f.read().strip().partition(" ")
+            return f"{label or '?'} (PID {pid or '?'})"
+        fcntl.flock(f, fcntl.LOCK_UN)
+    return None
+
+
+def profile_lock_path(game_name):
+    return JSONS_DIR / f".lock_{game_name or 'default'}"
 
 
 def cleanup_profile(game_name):

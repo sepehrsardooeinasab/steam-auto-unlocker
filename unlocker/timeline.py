@@ -6,6 +6,7 @@ from unlocker.state import (
     CSVS_DIR,
     DEFAULT_PROGRESS,
     PROJECT_DIR,
+    config_fingerprint,
     load_progress,
     profile_paths)
 
@@ -94,6 +95,10 @@ def show_timeline(name, which=None):
         if progress["appid"] != 0 and progress["appid"] != config["appid"]:
             progress = dict(DEFAULT_PROGRESS)
         last_completed = progress["last_completed"]
+        if (progress["config_hash"] is not None and last_completed >= 0
+                and progress["config_hash"] != config_fingerprint(config)):
+            print("Warning: the config's achievement order changed since this game was started, "
+                  "so done/next below may be off.")
     next_i = last_completed + 1
     current = next((si for si, s in enumerate(sessions) if next_i in s["indices"]), len(sessions) - 1)
 

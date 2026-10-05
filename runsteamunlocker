@@ -17,7 +17,7 @@ Usage: runsteamunlocker [-f] [-w | -in <time>] <config-name>
   <config-name>   Run the unlocker using jsons/config_<config-name>.json.
                   Shows the upcoming session's length and asks to confirm.
   -f, --force     Same as above, but skip the confirmation prompt.
-  -w, --wait      Confirm now, then wait (under caffeinate, without
+  -w, --wait      Confirm now, then wait (kept awake, without
                   touching ASF) until the session can run, and start it.
   -in <time>      Confirm now, then wait <time> before starting, e.g.
                   30 (minutes), 45m, 2h, 1h30m. Refused if the session's
@@ -68,6 +68,15 @@ kill_all() {
     if pgrep -f "$PROJECT_DIR/unlocker/run_unlocker.py" > /dev/null 2>&1; then
         echo "Stopping running unlocker session..."
         pkill -f "$PROJECT_DIR/unlocker/run_unlocker.py"
+        found=1
+    fi
+    # Keep-awake processes now exit with their run on their own; this
+    # catches any left behind by a force-killed run from an older version.
+    if pgrep -f "caffeinate -d -i -m -s" > /dev/null 2>&1 \
+        || pgrep -f "systemd-inhibit .*--who=Steam unlocker" > /dev/null 2>&1; then
+        echo "Stopping leftover keep-awake..."
+        pkill -f "caffeinate -d -i -m -s" || true
+        pkill -f "systemd-inhibit .*--who=Steam unlocker" || true
         found=1
     fi
     if [ "$found" -eq 0 ]; then

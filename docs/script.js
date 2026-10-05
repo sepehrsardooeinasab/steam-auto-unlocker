@@ -826,20 +826,6 @@
   els.exportText.addEventListener("click", noticeLocked);
   els.exportText.addEventListener("focus", noticeLocked);
 
-  // ---- collapsible side panels ----
-  function wireCollapse(buttonId, panelId, storageKey) {
-    var btn = document.getElementById(buttonId);
-    var panel = document.getElementById(panelId);
-    try {
-      if (localStorage.getItem(storageKey) === "1") panel.classList.add("collapsed");
-    } catch (e) {}
-    btn.addEventListener("click", function () {
-      panel.classList.toggle("collapsed");
-      try { localStorage.setItem(storageKey, panel.classList.contains("collapsed") ? "1" : "0"); } catch (e) {}
-    });
-  }
-  wireCollapse("collapse-left", "nav-panel-left", "unlock-scheduler-left-collapsed");
-  wireCollapse("collapse-right", "nav-panel-right", "unlock-scheduler-right-collapsed");
 
   // ---------------------------------------------------------------
   // Saving: File System Access API folder (silent, Chromium-only,

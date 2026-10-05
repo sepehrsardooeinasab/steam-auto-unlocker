@@ -1,4 +1,6 @@
 import json
+import os
+import random
 import signal
 import subprocess
 import sys
@@ -7,34 +9,52 @@ from datetime import datetime, timedelta
 
 from unlocker.api import (
     API_URL,
+    api_request_args,
     send_command,
     send_aset,
     send_alist,
     ensure_asf_running,
     notify,
+    other_asf_instances,
     schedule_asf_kill,
-    start_caffeinate,
-    stop_caffeinate)
+    start_keep_awake,
+    stop_keep_awake)
+from unlocker.settings import SETTINGS
 from unlocker.state import (
     DEFAULT_PROGRESS,
+    SESSION_LOCK,
+    acquire_lock,
+    cleanup_profile,
+    config_fingerprint,
+    config_problems,
     list_profiles,
-    profile_paths,
     load_config,
     load_progress,
-    save_progress,
-    cleanup_profile)
+    lock_holder,
+    profile_lock_path,
+    profile_paths,
+    release_locks,
+    save_progress)
 
-ASF_SHUTDOWN_DELAY = 300  # 5 minutes
-WARM_SETTLE_DELAY = 10  # bot was already connected to Steam throughout
-# A 10s buffer after a fresh (re)connect wasn't enough in practice — it
-# still produced an epoch/offline-looking achievement timestamp once — so
-# this one is generously long rather than re-guessing a slightly bigger
-# fixed number.
-RECONNECT_SETTLE_DELAY = 60
-# Unlocks this close together in the source data count as simultaneous (a
-# 1s delay is usually the same event straddling a second boundary), and are
-# batched into a single aset. Anything longer gets its own aset.
-SIMULTANEOUS_MAX_DELAY = 1
+# See unlocker/settings.py for what each of these is for.
+ASF_SHUTDOWN_DELAY = SETTINGS["asf_shutdown_delay"]
+WARM_SETTLE_DELAY = SETTINGS["warm_settle_delay"]
+RECONNECT_SETTLE_DELAY = SETTINGS["reconnect_settle_delay"]
+SIMULTANEOUS_MAX_DELAY = SETTINGS["simultaneous_max_delay"]
+JITTER_ENABLED = SETTINGS["jitter_enabled"]
+JITTER_MIN_DELAY = SETTINGS["jitter_min_delay"]
+JITTER_PERCENT = SETTINGS["jitter_percent"]
+
+
+def _jitter(seconds):
+    """A configured delay with the optional randomness applied: delays
+    longer than JITTER_MIN_DELAY move by up to ±JITTER_PERCENT of
+    themselves, when jitter is on. Shorter ones (and everything, when it's
+    off) come back unchanged."""
+    if not JITTER_ENABLED or seconds <= JITTER_MIN_DELAY:
+        return seconds
+    spread = seconds * JITTER_PERCENT / 100
+    return max(0, round(seconds + random.uniform(-spread, spread)))
 
 
 def _session_bounds(achievements):
@@ -50,7 +70,7 @@ def _session_bounds(achievements):
 
 class _Signalled(Exception):
     """Raised from a SIGHUP/SIGTERM handler, so the run unwinds through its
-    finally (stopping caffeinate) instead of dying on the spot."""
+    finally (stopping keep-awake) instead of dying on the spot."""
     def __init__(self, signum):
         super().__init__(signal.Signals(signum).name)
         self.signum = signum
@@ -65,14 +85,15 @@ def _schedule_asf_shutdown(delay_seconds=ASF_SHUTDOWN_DELAY):
     down entirely — but only if it still looks idle by then, so it isn't
     killed out from under an interleaved session for another game that
     might get started in the meantime."""
+    (status_argv, headers), (exit_argv, _) = api_request_args("status"), api_request_args("exit")
+    # Headers (which may hold the IPC password) go through the environment,
+    # not the -c code below, which is visible in `ps`.
     child_code = f"""
-import json, subprocess, time
+import json, os, subprocess, time
 
-def request(c):
-    p = subprocess.run(
-        ["curl", "-s", "-X", "POST", {API_URL!r},
-         "-H", "Content-Type: application/json", "-d", json.dumps({{"Command": c}})],
-        capture_output=True, text=True, timeout=30)
+def request(argv):
+    p = subprocess.run(argv, input=os.environ["UNLOCKER_API_HEADERS"],
+                       capture_output=True, text=True, timeout=30)
     return json.loads(p.stdout).get("Result", "")
 
 def cmd(c, attempts=5, retry_delay=5):
@@ -89,11 +110,12 @@ def cmd(c, attempts=5, retry_delay=5):
             time.sleep(retry_delay)
 
 time.sleep({delay_seconds})
-if "not farming anything" in cmd("status").lower():
-    cmd("exit")
+if "not farming anything" in cmd({status_argv!r}).lower():
+    cmd({exit_argv!r})
 """
     subprocess.Popen(
         [sys.executable, "-c", child_code],
+        env={**os.environ, "UNLOCKER_API_HEADERS": headers},
         start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -125,6 +147,17 @@ def _estimate_session(achievements, start_from, progress, first_run):
     duration = sum(achievements[i]["delay"] for i in range(start_from + 1, end))
 
     return end, wait, duration
+
+
+def config_changed(config, progress):
+    """True when progress was saved against a different achievement order
+    than the config has now, so its saved position may point at a
+    different achievement. Progress from before fingerprints existed, or
+    for another appid (which gets reset anyway), doesn't count."""
+    return (progress["appid"] == config["appid"]
+            and progress["last_completed"] >= 0
+            and progress["config_hash"] is not None
+            and progress["config_hash"] != config_fingerprint(config))
 
 
 def _format_duration(seconds):
@@ -177,10 +210,11 @@ def list_status():
         label = name or "(default)"
         try:
             config = json.loads(config_path.read_text())
-            if not config.get("achievements"):
-                rows.append((label, "-", "-", "-", "no achievements in config"))
+            if config_problems(config):
+                rows.append((label, "-", "-", "-", "invalid config (run it to see why)"))
                 continue
-            status = _session_status(config, load_progress(progress_path))
+            progress = load_progress(progress_path)
+            status = _session_status(config, progress)
         except (json.JSONDecodeError, OSError, KeyError, ValueError) as e:
             rows.append((label, "-", "-", "-", f"unreadable ({e.__class__.__name__})"))
             continue
@@ -191,6 +225,10 @@ def list_status():
 
         number, total, count, duration, wait = status
         when = _format_duration(wait) if wait > 0 else "now"
+        if lock_holder(profile_lock_path(name)):
+            when = "running now"
+        elif config_changed(config, progress):
+            when += " (config changed)"
         rows.append((label, f"{number}/{total}", f"~{_format_duration(duration)}", str(count), when))
 
     header = ("NAME", "SESSION", "DURATION", "#ACH", "READY IN")
@@ -199,12 +237,27 @@ def list_status():
         print("  ".join(r[c].ljust(widths[c]) for c in range(len(header))).rstrip())
 
 
-def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=False):
+def run(*args, **kwargs):
+    """Runs a session (see _run), releasing its locks when it returns."""
+    try:
+        _run(*args, **kwargs)
+    finally:
+        release_locks()
+
+
+def _run(game_name=None, force=False, time_only=False, delay=None, wait_ready=False):
     """delay: seconds to wait before starting (-in). wait_ready: wait until
     the session can actually run — cooldown over and first unlock due — and
     start then (-w). Either way the wait happens after the confirmation
-    prompt, under caffeinate, and before ASF is touched."""
+    prompt, under keep-awake, and before ASF is touched."""
     config_path, progress_path = profile_paths(game_name)
+    game_label = game_name or "default"
+
+    # One run per game at a time, held until this process exits — including
+    # any -w/-in wait. -t only reads, so it doesn't need it.
+    if not time_only and not acquire_lock(profile_lock_path(game_name), game_label):
+        print(f"{game_label} is already running: {lock_holder(profile_lock_path(game_name))}.")
+        return
 
     config = load_config(config_path)
     achievements = config["achievements"]
@@ -225,6 +278,21 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
         print("All achievements already completed.")
         cleanup_profile(game_name)
         return
+
+    if config_changed(config, progress) and not time_only:
+        n = progress["last_completed"] + 1
+        print(f"The config's achievement order changed since this game was started. "
+              f"Progress is saved as {n} achievement{'s' if n != 1 else ''} done by position, "
+              f"so it may now point at different achievements.")
+        if force:
+            print("Not running with -f. Run without -f to confirm, or delete "
+                  f"{progress_path.name} to start over.")
+            return
+        if input("Continue from the same position anyway? [y/N] ").strip().lower() != "y":
+            print("Cancelled.")
+            return
+    # Every save from here on records the config it was made against.
+    progress["config_hash"] = config_fingerprint(config)
 
 
     # Cheap, ASF-independent estimate from the config alone, so the user can
@@ -293,6 +361,28 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
     if start_at > now:
         print(f"Starting in {_format_duration((start_at - now).total_seconds())} (at {start_at:%H:%M}).")
 
+    # Another game's session is talking to ASF right now. ASF plays one game
+    # at a time, so this one would have it "play" the wrong game mid-session.
+    busy = lock_holder(SESSION_LOCK)
+    if busy:
+        if not wait_ready and delay is None:
+            print(f"Another session is running: {busy}. Run this one after it "
+                  "finishes, or use -w / -in to queue it.")
+            return
+        print(f"Another session is running: {busy}. If it's still going by then, "
+              "this one will wait for it to finish.")
+
+    others = other_asf_instances()
+    if others:
+        action = ("will be stopped when the session starts" if SETTINGS["stop_other_asf"]
+                  else "will be left running (stop_other_asf is off)")
+        for pid, command in others:
+            print(f"Another ArchiSteamFarm is running (PID {pid}: {command}). It {action}.")
+
+    if JITTER_ENABLED:
+        print(f"Randomness on: delays over {_format_duration(JITTER_MIN_DELAY)} "
+              f"vary by up to ±{JITTER_PERCENT:g}%.")
+
     if force:
         print(session_line)
     else:
@@ -303,7 +393,6 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
 
     # Only touch ASF once the user has actually committed to running —
     # not before, so declining the prompt above never starts it up.
-    game_label = game_name or "default"
     # SIGHUP: the terminal window was closed. SIGTERM: runsteamunlocker -k.
     signal.signal(signal.SIGHUP, _raise_signalled)
     signal.signal(signal.SIGTERM, _raise_signalled)
@@ -311,9 +400,9 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
     # Nothing to wait out (e.g. a single-achievement session that fires right
     # away) means nothing to stay awake for — the run is over in seconds.
     awake_for = (max(start_at, ready_at) - now).total_seconds() + est_duration
-    caffeinate_proc = start_caffeinate() if awake_for > 0 else None
-    if caffeinate_proc is not None:
-        print(f"Caffeinate activated for {_format_duration(awake_for)}.")
+    keep_awake_proc = start_keep_awake() if awake_for > 0 else None
+    if keep_awake_proc is not None:
+        print(f"Keeping the system awake for {_format_duration(awake_for)}.")
 
     try:
         if start_at > datetime.now():
@@ -322,6 +411,11 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
             # it start late.
             while (left := (start_at - datetime.now()).total_seconds()) > 0:
                 time.sleep(min(left, 60))
+
+        if not acquire_lock(SESSION_LOCK, game_label):
+            print(f"Waiting for the other session to finish: {lock_holder(SESSION_LOCK)}...")
+            acquire_lock(SESSION_LOCK, game_label, block=True)
+            print("It finished, starting.")
 
         if cooldown_ends is not None:
             progress["session_ends_at"] = None
@@ -368,7 +462,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
 
             next_i = i + 1
             if next_i < len(achievements) and achievements[next_i]["new_session"]:
-                gap = achievements[next_i]["delay"]
+                gap = _jitter(achievements[next_i]["delay"])
                 progress["next_unlock_at"] = None
                 progress["session_ends_at"] = (datetime.now() + timedelta(seconds=gap)).isoformat()
                 save_progress(progress_path, progress)
@@ -380,7 +474,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
                               f"Next in {_format_duration(gap)} (at {next_at:%a %H:%M}).")
                 return True  # stop the script
             elif next_i < len(achievements):
-                progress["next_unlock_at"] = (issued_at + timedelta(seconds=achievements[next_i]["delay"])).isoformat()
+                progress["next_unlock_at"] = (issued_at + timedelta(seconds=_jitter(achievements[next_i]["delay"]))).isoformat()
             else:
                 progress["next_unlock_at"] = None
 
@@ -399,7 +493,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
             if awaiting_first_unlock:
                 remaining_delay = 0
             else:
-                remaining_delay = ach["delay"]
+                remaining_delay = _jitter(ach["delay"])
                 if progress["next_unlock_at"] is not None:
                     unlock_at = datetime.fromisoformat(progress["next_unlock_at"])
                     remaining_delay = max(0, int((unlock_at - datetime.now()).total_seconds()))
@@ -481,4 +575,4 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
         notify(game_label, f"Crashed: {e.__class__.__name__}: {e}", error=True)
         raise
     finally:
-        stop_caffeinate(caffeinate_proc)
+        stop_keep_awake(keep_awake_proc)
