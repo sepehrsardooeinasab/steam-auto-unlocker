@@ -5,5 +5,8 @@
   "warm_settle_delay": 10,
   "reconnect_settle_delay": 60,
   "simultaneous_max_delay": 1,
-  "asf_shutdown_delay": 300
+  "asf_shutdown_delay": 300,
+  "jitter_enabled": false,
+  "jitter_min_delay": 60,
+  "jitter_percent": 10
 }

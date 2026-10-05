@@ -88,6 +88,11 @@ The defaults work with the setup above. To change any of them, copy `settings.ex
 | `reconnect_settle_delay` | `60` | The same pause after a fresh (re)connect. Shorter values have produced offline-looking timestamps. |
 | `simultaneous_max_delay` | `1` | Unlocks this many seconds apart or less are sent together in a single `aset`. |
 | `asf_shutdown_delay` | `300` | Seconds after a session ends before ASF is shut down, if it's idle. |
+| `jitter_enabled` | `false` | Turns on randomness, so a run doesn't replay the source player's timings to the second. |
+| `jitter_min_delay` | `60` | Only delays longer than this many seconds get randomness. Shorter ones are kept exact. |
+| `jitter_percent` | `10` | How far a delay can move, in either direction, as a percentage of itself (0–100). With the defaults, a 10-minute delay becomes anywhere from 9 to 11 minutes. |
+
+With randomness on, it applies to the delays between achievements and to the gaps between sessions. The random value is picked when that delay is scheduled and saved with your progress, so stopping and resuming doesn't pick a new one. Unlocks that happened together in the source data (see `simultaneous_max_delay`) are still sent together. Estimates such as `-t`, `-ls` and the session length shown before you confirm still use the config's exact values.
 
 ## Layout
 

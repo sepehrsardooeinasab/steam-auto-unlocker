@@ -26,6 +26,13 @@ DEFAULTS = {
     "simultaneous_max_delay": 1,
     # After a session ends, ASF is shut down this long later if it's idle.
     "asf_shutdown_delay": 300,
+    # Randomness on delays: when on, each delay (between achievements, and
+    # the gap between sessions) longer than jitter_min_delay seconds is moved
+    # by a random amount up to ±jitter_percent of itself, so a run never
+    # replays the source player's timings exactly. Off by default.
+    "jitter_enabled": False,
+    "jitter_min_delay": 60,
+    "jitter_percent": 10,
 }
 
 # Accepted types per setting; None means null is allowed.
@@ -37,6 +44,9 @@ _TYPES = {
     "reconnect_settle_delay": (int,),
     "simultaneous_max_delay": (int,),
     "asf_shutdown_delay": (int,),
+    "jitter_enabled": (bool,),
+    "jitter_min_delay": (int,),
+    "jitter_percent": (int, float),
 }
 
 
@@ -63,12 +73,14 @@ def load_settings(path=SETTINGS_PATH):
         if key not in DEFAULTS:
             _fail(f"unknown setting {key!r} (known: {', '.join(DEFAULTS)})")
         # bool is an int subclass in Python — don't accept true as 1.
-        if isinstance(value, bool) or not isinstance(value, _TYPES[key]):
+        if (isinstance(value, bool) and bool not in _TYPES[key]) or not isinstance(value, _TYPES[key]):
             _fail(f"{key!r} has the wrong type ({type(value).__name__})")
-        if isinstance(value, int) and value < 0:
+        if not isinstance(value, bool) and isinstance(value, (int, float)) and value < 0:
             _fail(f"{key!r} can't be negative")
     if not 1 <= overrides.get("asf_port", 1) <= 65535:
         _fail("'asf_port' must be between 1 and 65535")
+    if overrides.get("jitter_percent", 0) > 100:
+        _fail("'jitter_percent' can't be more than 100")
 
     return {**DEFAULTS, **overrides}
 

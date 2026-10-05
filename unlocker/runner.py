@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import signal
 import subprocess
 import sys
@@ -32,6 +33,20 @@ ASF_SHUTDOWN_DELAY = SETTINGS["asf_shutdown_delay"]
 WARM_SETTLE_DELAY = SETTINGS["warm_settle_delay"]
 RECONNECT_SETTLE_DELAY = SETTINGS["reconnect_settle_delay"]
 SIMULTANEOUS_MAX_DELAY = SETTINGS["simultaneous_max_delay"]
+JITTER_ENABLED = SETTINGS["jitter_enabled"]
+JITTER_MIN_DELAY = SETTINGS["jitter_min_delay"]
+JITTER_PERCENT = SETTINGS["jitter_percent"]
+
+
+def _jitter(seconds):
+    """A configured delay with the optional randomness applied: delays
+    longer than JITTER_MIN_DELAY move by up to ±JITTER_PERCENT of
+    themselves, when jitter is on. Shorter ones (and everything, when it's
+    off) come back unchanged."""
+    if not JITTER_ENABLED or seconds <= JITTER_MIN_DELAY:
+        return seconds
+    spread = seconds * JITTER_PERCENT / 100
+    return max(0, round(seconds + random.uniform(-spread, spread)))
 
 
 def _session_bounds(achievements):
@@ -292,6 +307,10 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
     if start_at > now:
         print(f"Starting in {_format_duration((start_at - now).total_seconds())} (at {start_at:%H:%M}).")
 
+    if JITTER_ENABLED:
+        print(f"Randomness on: delays over {_format_duration(JITTER_MIN_DELAY)} "
+              f"vary by up to ±{JITTER_PERCENT:g}%.")
+
     if force:
         print(session_line)
     else:
@@ -367,7 +386,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
 
             next_i = i + 1
             if next_i < len(achievements) and achievements[next_i]["new_session"]:
-                gap = achievements[next_i]["delay"]
+                gap = _jitter(achievements[next_i]["delay"])
                 progress["next_unlock_at"] = None
                 progress["session_ends_at"] = (datetime.now() + timedelta(seconds=gap)).isoformat()
                 save_progress(progress_path, progress)
@@ -379,7 +398,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
                               f"Next in {_format_duration(gap)} (at {next_at:%a %H:%M}).")
                 return True  # stop the script
             elif next_i < len(achievements):
-                progress["next_unlock_at"] = (issued_at + timedelta(seconds=achievements[next_i]["delay"])).isoformat()
+                progress["next_unlock_at"] = (issued_at + timedelta(seconds=_jitter(achievements[next_i]["delay"]))).isoformat()
             else:
                 progress["next_unlock_at"] = None
 
@@ -398,7 +417,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
             if awaiting_first_unlock:
                 remaining_delay = 0
             else:
-                remaining_delay = ach["delay"]
+                remaining_delay = _jitter(ach["delay"])
                 if progress["next_unlock_at"] is not None:
                     unlock_at = datetime.fromisoformat(progress["next_unlock_at"])
                     remaining_delay = max(0, int((unlock_at - datetime.now()).total_seconds()))
