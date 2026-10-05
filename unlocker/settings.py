@@ -26,6 +26,11 @@ DEFAULTS = {
     "simultaneous_max_delay": 1,
     # After a session ends, ASF is shut down this long later if it's idle.
     "asf_shutdown_delay": 300,
+    # Whether to stop other ArchiSteamFarm instances on this machine when a
+    # session starts. Needed when one of them logs into the same Steam
+    # account (Steam allows only one login at a time); turn it off if
+    # they use other accounts, e.g. a card-farming install.
+    "stop_other_asf": True,
     # Randomness on delays: when on, each delay (between achievements, and
     # the gap between sessions) longer than jitter_min_delay seconds is moved
     # by a random amount up to ±jitter_percent of itself, so a run never
@@ -44,6 +49,7 @@ _TYPES = {
     "reconnect_settle_delay": (int,),
     "simultaneous_max_delay": (int,),
     "asf_shutdown_delay": (int,),
+    "stop_other_asf": (bool,),
     "jitter_enabled": (bool,),
     "jitter_min_delay": (int,),
     "jitter_percent": (int, float),

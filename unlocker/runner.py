@@ -15,6 +15,7 @@ from unlocker.api import (
     send_alist,
     ensure_asf_running,
     notify,
+    other_asf_instances,
     schedule_asf_kill,
     start_keep_awake,
     stop_keep_awake)
@@ -370,6 +371,13 @@ def _run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fa
             return
         print(f"Another session is running: {busy}. If it's still going by then, "
               "this one will wait for it to finish.")
+
+    others = other_asf_instances()
+    if others:
+        action = ("will be stopped when the session starts" if SETTINGS["stop_other_asf"]
+                  else "will be left running (stop_other_asf is off)")
+        for pid, command in others:
+            print(f"Another ArchiSteamFarm is running (PID {pid}: {command}). It {action}.")
 
     if JITTER_ENABLED:
         print(f"Randomness on: delays over {_format_duration(JITTER_MIN_DELAY)} "

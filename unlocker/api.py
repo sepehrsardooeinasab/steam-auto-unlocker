@@ -31,25 +31,47 @@ ASF_BINARY = ASF_DIR / "ArchiSteamFarm"
 ASF_LOG = ASF_DIR / "log.txt"
 
 
-def _stop_other_asf_instances():
-    """Kills any running ArchiSteamFarm process that isn't this project's
-    own. Steam only allows one active login per account, and bot1 here may
-    share its account with other ASF installs on this machine — leaving
-    one of those running would otherwise make this one hang forever trying
-    to connect."""
+def _ps(pid, field):
+    return subprocess.run(
+        ["ps", "-p", pid, "-o", f"{field}="], capture_output=True, text=True).stdout.strip()
+
+
+def other_asf_instances():
+    """[(pid, command)] for every running ArchiSteamFarm that isn't this
+    project's own. Only real ASF processes count — the native binary, or
+    `dotnet ArchiSteamFarm.dll` — not anything that merely mentions the
+    name, like `tail -f .../ArchiSteamFarm/log.txt` or an editor."""
     pids = subprocess.run(
         ["pgrep", "-f", "ArchiSteamFarm"], capture_output=True, text=True).stdout.split()
-    own_binary = str(ASF_BINARY)
-    stopped = False
+    found = []
     for pid in pids:
-        cmdline = subprocess.run(
-            ["ps", "-p", pid, "-o", "command="], capture_output=True, text=True).stdout
-        if own_binary not in cmdline:
-            subprocess.run(["kill", pid])
-            stopped = True
-    if stopped:
-        print("Stopped another running ArchiSteamFarm instance (same Steam account).")
-        time.sleep(3)
+        command = _ps(pid, "command")
+        executable = os.path.basename(_ps(pid, "comm"))
+        is_asf = (executable.startswith("ArchiSteamFarm")
+                  or (executable == "dotnet" and "ArchiSteamFarm.dll" in command))
+        if is_asf and str(ASF_BINARY) not in command:
+            found.append((pid, command))
+    return found
+
+
+def _stop_other_asf_instances():
+    """Stops other ArchiSteamFarm instances, when stop_other_asf is on.
+    Steam only allows one active login per account, and bot1 here may share
+    its account with other ASF installs on this machine — leaving one of
+    those running would otherwise make this one hang forever trying to
+    connect. With the setting off, they're left alone with a warning."""
+    others = other_asf_instances()
+    if not others:
+        return
+    if not SETTINGS["stop_other_asf"]:
+        for pid, command in others:
+            print(f"Warning: another ArchiSteamFarm is running (PID {pid}: {command}). "
+                  "If it uses the same Steam account, the bot can't connect.")
+        return
+    for pid, command in others:
+        print(f"Stopping another ArchiSteamFarm (PID {pid}: {command}).")
+        subprocess.run(["kill", pid])
+    time.sleep(3)
 
 
 def ensure_asf_running():
