@@ -98,6 +98,7 @@ With randomness on, it applies to the delays between achievements and to the gap
 
 - **Config check:** before anything else, the config is checked for a valid `appid` and, on every achievement, a whole-number `id` (no duplicates), a `delay` of 0 or more and a true/false `new_session`. A broken config stops with a list of what's wrong, instead of failing partway through a session.
 - **Config changed:** progress is saved as a position in the config's achievement list, together with a fingerprint of that list's order. If the order changes later (e.g. you regenerate the config from another player), you're asked before continuing, and `-f` refuses. Editing delays or session breaks doesn't count as a change. `-ls` and `-s` show the same warning.
+- **One run at a time:** the same game can't run twice at once. While a session is talking to ASF, other games wait too, since ASF can only play one game at a time. Running another game then is refused, while `-w` / `-in` wait for the first session to finish. `-ls` shows a running game as `running now`. The locks are released automatically when a run exits, even if it's killed.
 - **Safe progress saves:** progress is written to a temporary file and then swapped in, so stopping a run mid-save can't corrupt it.
 
 ## Layout

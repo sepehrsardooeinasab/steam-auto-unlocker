@@ -21,13 +21,18 @@ from unlocker.api import (
 from unlocker.settings import SETTINGS
 from unlocker.state import (
     DEFAULT_PROGRESS,
+    SESSION_LOCK,
+    acquire_lock,
     cleanup_profile,
     config_fingerprint,
     config_problems,
     list_profiles,
     load_config,
     load_progress,
+    lock_holder,
+    profile_lock_path,
     profile_paths,
+    release_locks,
     save_progress)
 
 # See unlocker/settings.py for what each of these is for.
@@ -219,7 +224,9 @@ def list_status():
 
         number, total, count, duration, wait = status
         when = _format_duration(wait) if wait > 0 else "now"
-        if config_changed(config, progress):
+        if lock_holder(profile_lock_path(name)):
+            when = "running now"
+        elif config_changed(config, progress):
             when += " (config changed)"
         rows.append((label, f"{number}/{total}", f"~{_format_duration(duration)}", str(count), when))
 
@@ -229,12 +236,27 @@ def list_status():
         print("  ".join(r[c].ljust(widths[c]) for c in range(len(header))).rstrip())
 
 
-def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=False):
+def run(*args, **kwargs):
+    """Runs a session (see _run), releasing its locks when it returns."""
+    try:
+        _run(*args, **kwargs)
+    finally:
+        release_locks()
+
+
+def _run(game_name=None, force=False, time_only=False, delay=None, wait_ready=False):
     """delay: seconds to wait before starting (-in). wait_ready: wait until
     the session can actually run — cooldown over and first unlock due — and
     start then (-w). Either way the wait happens after the confirmation
     prompt, under keep-awake, and before ASF is touched."""
     config_path, progress_path = profile_paths(game_name)
+    game_label = game_name or "default"
+
+    # One run per game at a time, held until this process exits — including
+    # any -w/-in wait. -t only reads, so it doesn't need it.
+    if not time_only and not acquire_lock(profile_lock_path(game_name), game_label):
+        print(f"{game_label} is already running: {lock_holder(profile_lock_path(game_name))}.")
+        return
 
     config = load_config(config_path)
     achievements = config["achievements"]
@@ -338,6 +360,17 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
     if start_at > now:
         print(f"Starting in {_format_duration((start_at - now).total_seconds())} (at {start_at:%H:%M}).")
 
+    # Another game's session is talking to ASF right now. ASF plays one game
+    # at a time, so this one would have it "play" the wrong game mid-session.
+    busy = lock_holder(SESSION_LOCK)
+    if busy:
+        if not wait_ready and delay is None:
+            print(f"Another session is running: {busy}. Run this one after it "
+                  "finishes, or use -w / -in to queue it.")
+            return
+        print(f"Another session is running: {busy}. If it's still going by then, "
+              "this one will wait for it to finish.")
+
     if JITTER_ENABLED:
         print(f"Randomness on: delays over {_format_duration(JITTER_MIN_DELAY)} "
               f"vary by up to ±{JITTER_PERCENT:g}%.")
@@ -352,7 +385,6 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
 
     # Only touch ASF once the user has actually committed to running —
     # not before, so declining the prompt above never starts it up.
-    game_label = game_name or "default"
     # SIGHUP: the terminal window was closed. SIGTERM: runsteamunlocker -k.
     signal.signal(signal.SIGHUP, _raise_signalled)
     signal.signal(signal.SIGTERM, _raise_signalled)
@@ -371,6 +403,11 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
             # it start late.
             while (left := (start_at - datetime.now()).total_seconds()) > 0:
                 time.sleep(min(left, 60))
+
+        if not acquire_lock(SESSION_LOCK, game_label):
+            print(f"Waiting for the other session to finish: {lock_holder(SESSION_LOCK)}...")
+            acquire_lock(SESSION_LOCK, game_label, block=True)
+            print("It finished, starting.")
 
         if cooldown_ends is not None:
             progress["session_ends_at"] = None

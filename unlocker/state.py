@@ -1,3 +1,4 @@
+import fcntl
 import hashlib
 import os
 import sys
@@ -20,6 +21,10 @@ DEFAULT_PROGRESS = {
     # (see config_fingerprint). None in progress files from before it existed.
     "config_hash": None,
 }
+
+# Held while a session talks to ASF, by whichever game is running: ASF can
+# only "play" one game at a time.
+SESSION_LOCK = JSONS_DIR / ".session.lock"
 
 
 def profile_paths(game_name):
@@ -129,6 +134,56 @@ def save_progress(path, progress):
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, path)
+
+
+_held_locks = []  # open lock files, kept referenced so they stay locked
+
+
+def acquire_lock(path, label, block=False):
+    """Takes an exclusive lock on path, recording label and this PID in it.
+    Returns True once held — until this process exits, even if it's killed,
+    since the OS drops the lock with the process. Without block, returns
+    False straight away when another process holds it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = open(path, "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | (0 if block else fcntl.LOCK_NB))
+    except BlockingIOError:
+        f.close()
+        return False
+    f.seek(0)
+    f.truncate()
+    f.write(f"{os.getpid()} {label}\n")
+    f.flush()
+    _held_locks.append(f)
+    return True
+
+
+def release_locks():
+    """Releases every lock acquire_lock() took in this process."""
+    while _held_locks:
+        _held_locks.pop().close()
+
+
+def lock_holder(path):
+    """'<label> (PID <pid>)' for the process holding path's lock, or None if
+    nobody holds it. Read-only: never takes the lock for longer than the
+    check itself."""
+    if not path.exists():
+        return None
+    with open(path, "a+") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            f.seek(0)
+            pid, _, label = f.read().strip().partition(" ")
+            return f"{label or '?'} (PID {pid or '?'})"
+        fcntl.flock(f, fcntl.LOCK_UN)
+    return None
+
+
+def profile_lock_path(game_name):
+    return JSONS_DIR / f".lock_{game_name or 'default'}"
 
 
 def cleanup_profile(game_name):
