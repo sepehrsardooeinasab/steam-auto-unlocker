@@ -1,0 +1,76 @@
+import json
+import sys
+from pathlib import Path
+
+SETTINGS_PATH = Path(__file__).resolve().parent.parent / "settings.json"
+
+# Every setting, with its default. settings.json only needs the keys being
+# changed; anything left out keeps the value here.
+DEFAULTS = {
+    # Port ArchiSteamFarm's IPC listens on — must match archifarm/config/IPC.config.
+    "asf_port": 1243,
+    # ASF's IPCPassword (from ASF.json), if one is set. null when there's none.
+    "ipc_password": None,
+    # How long a command keeps retrying while ASF starts up or the bot
+    # (re)connects to Steam, before giving up.
+    "bot_connect_timeout": 60,
+    # Pause after "play" before the first unlock, when the bot was already
+    # connected to Steam throughout.
+    "warm_settle_delay": 10,
+    # Same, after a fresh (re)connect. A 10s buffer wasn't enough in practice
+    # — it still produced an epoch/offline-looking achievement timestamp once.
+    "reconnect_settle_delay": 60,
+    # Unlocks this close together in the source data count as simultaneous
+    # (a 1s delay is usually the same event straddling a second boundary),
+    # and are batched into a single aset.
+    "simultaneous_max_delay": 1,
+    # After a session ends, ASF is shut down this long later if it's idle.
+    "asf_shutdown_delay": 300,
+}
+
+# Accepted types per setting; None means null is allowed.
+_TYPES = {
+    "asf_port": (int,),
+    "ipc_password": (str, type(None)),
+    "bot_connect_timeout": (int,),
+    "warm_settle_delay": (int,),
+    "reconnect_settle_delay": (int,),
+    "simultaneous_max_delay": (int,),
+    "asf_shutdown_delay": (int,),
+}
+
+
+def _fail(message):
+    print(f"settings.json: {message}")
+    sys.exit(1)
+
+
+def load_settings(path=SETTINGS_PATH):
+    """DEFAULTS overlaid with settings.json, if it exists. Exits with a
+    message on an unknown key or a wrong type, so a typo never silently
+    falls back to a default."""
+    if not path.exists():
+        return dict(DEFAULTS)
+
+    try:
+        overrides = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        _fail(f"not valid JSON ({e})")
+    if not isinstance(overrides, dict):
+        _fail("must be a JSON object")
+
+    for key, value in overrides.items():
+        if key not in DEFAULTS:
+            _fail(f"unknown setting {key!r} (known: {', '.join(DEFAULTS)})")
+        # bool is an int subclass in Python — don't accept true as 1.
+        if isinstance(value, bool) or not isinstance(value, _TYPES[key]):
+            _fail(f"{key!r} has the wrong type ({type(value).__name__})")
+        if isinstance(value, int) and value < 0:
+            _fail(f"{key!r} can't be negative")
+    if not 1 <= overrides.get("asf_port", 1) <= 65535:
+        _fail("'asf_port' must be between 1 and 65535")
+
+    return {**DEFAULTS, **overrides}
+
+
+SETTINGS = load_settings()

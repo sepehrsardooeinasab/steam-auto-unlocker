@@ -21,7 +21,7 @@ Runs on macOS and Linux (not Windows).
 - Download and set up [ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm).
 - Download [ASFAchievementManager](https://github.com/CatPoweredPlugins/ASFAchievementManager) and drop it into ASF's `plugins/` folder.
 - Create a bot following ASF's own setup instructions. ASF supports running multiple bots, but this project only assumes a single one (`bot1`) — unlocking achievements on your own account doesn't need more.
-- **Required:** create `archifarm/config/IPC.config` so ASF's local API listens on port `1243` — the port `unlocker/api.py` talks to, not ASF's default `1242`. This keeps it off the default port so it can't collide with any other ASF instance you might run (e.g. one used for card farming); the unlocker won't be able to reach ASF at all without it.
+- **Required:** create `archifarm/config/IPC.config` so ASF's local API listens on port `1243` — the port the unlocker talks to by default (changeable with `asf_port` in [Settings](#7-settings-optional)), not ASF's default `1242`. This keeps it off the default port so it can't collide with any other ASF instance you might run (e.g. one used for card farming); the unlocker won't be able to reach ASF at all without it.
   ```json
   {
       "Kestrel": {
@@ -75,12 +75,27 @@ While a session runs (including any `-w` / `-in` wait before it), the unlocker k
 - **macOS:** uses the built-in `caffeinate`. Nothing to install.
 - **Linux:** uses `systemd-inhibit` (part of systemd) to hold a sleep/idle inhibitor. If it's missing or can't take the inhibitor (e.g. no logind session), the run goes ahead without it. Closing a laptop lid may still suspend it, depending on your desktop's lid settings.
 
+### 7. Settings (optional)
+
+The defaults work with the setup above. To change any of them, copy `settings.example.json` to `settings.json` (gitignored) and keep only the keys you want to change. An unknown key or a wrong type stops the unlocker with an error, so a typo never quietly falls back to a default.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `asf_port` | `1243` | Port ASF's IPC listens on. Must match `IPC.config`. |
+| `ipc_password` | `null` | ASF's `IPCPassword` from `ASF.json`, if you set one. |
+| `bot_connect_timeout` | `60` | Seconds a command keeps retrying while ASF starts or the bot connects to Steam. |
+| `warm_settle_delay` | `10` | Seconds between `play` and the first unlock when the bot was already connected. |
+| `reconnect_settle_delay` | `60` | The same pause after a fresh (re)connect. Shorter values have produced offline-looking timestamps. |
+| `simultaneous_max_delay` | `1` | Unlocks this many seconds apart or less are sent together in a single `aset`. |
+| `asf_shutdown_delay` | `300` | Seconds after a session ends before ASF is shut down, if it's idle. |
+
 ## Layout
 
 - `unlocker/` — the Python package that drives unlocking:
   - `runner.py` — the unlock loop: delays, session breaks, resuming from saved progress
   - `api.py` — talks to ArchiSteamFarm's local Web API (`aset`, `play`, `reset`)
   - `state.py` — reads/writes `jsons/config_*.json` and `jsons/progress_*.json`
+  - `settings.py` — defaults for `settings.json` and its validation
   - `run_unlocker.py` — CLI entry point
 - `runsteamunlocker` — bash launcher: starts ArchiSteamFarm if needed, then runs the unlocker for a given config
 - `runsteamunlocker.zsh-completion` — tab-completion for available configs

@@ -1,4 +1,5 @@
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -7,6 +8,7 @@ from datetime import datetime, timedelta
 
 from unlocker.api import (
     API_URL,
+    api_request_args,
     send_command,
     send_aset,
     send_alist,
@@ -15,6 +17,7 @@ from unlocker.api import (
     schedule_asf_kill,
     start_keep_awake,
     stop_keep_awake)
+from unlocker.settings import SETTINGS
 from unlocker.state import (
     DEFAULT_PROGRESS,
     list_profiles,
@@ -24,17 +27,11 @@ from unlocker.state import (
     save_progress,
     cleanup_profile)
 
-ASF_SHUTDOWN_DELAY = 300  # 5 minutes
-WARM_SETTLE_DELAY = 10  # bot was already connected to Steam throughout
-# A 10s buffer after a fresh (re)connect wasn't enough in practice — it
-# still produced an epoch/offline-looking achievement timestamp once — so
-# this one is generously long rather than re-guessing a slightly bigger
-# fixed number.
-RECONNECT_SETTLE_DELAY = 60
-# Unlocks this close together in the source data count as simultaneous (a
-# 1s delay is usually the same event straddling a second boundary), and are
-# batched into a single aset. Anything longer gets its own aset.
-SIMULTANEOUS_MAX_DELAY = 1
+# See unlocker/settings.py for what each of these is for.
+ASF_SHUTDOWN_DELAY = SETTINGS["asf_shutdown_delay"]
+WARM_SETTLE_DELAY = SETTINGS["warm_settle_delay"]
+RECONNECT_SETTLE_DELAY = SETTINGS["reconnect_settle_delay"]
+SIMULTANEOUS_MAX_DELAY = SETTINGS["simultaneous_max_delay"]
 
 
 def _session_bounds(achievements):
@@ -65,14 +62,15 @@ def _schedule_asf_shutdown(delay_seconds=ASF_SHUTDOWN_DELAY):
     down entirely — but only if it still looks idle by then, so it isn't
     killed out from under an interleaved session for another game that
     might get started in the meantime."""
+    (status_argv, headers), (exit_argv, _) = api_request_args("status"), api_request_args("exit")
+    # Headers (which may hold the IPC password) go through the environment,
+    # not the -c code below, which is visible in `ps`.
     child_code = f"""
-import json, subprocess, time
+import json, os, subprocess, time
 
-def request(c):
-    p = subprocess.run(
-        ["curl", "-s", "-X", "POST", {API_URL!r},
-         "-H", "Content-Type: application/json", "-d", json.dumps({{"Command": c}})],
-        capture_output=True, text=True, timeout=30)
+def request(argv):
+    p = subprocess.run(argv, input=os.environ["UNLOCKER_API_HEADERS"],
+                       capture_output=True, text=True, timeout=30)
     return json.loads(p.stdout).get("Result", "")
 
 def cmd(c, attempts=5, retry_delay=5):
@@ -89,11 +87,12 @@ def cmd(c, attempts=5, retry_delay=5):
             time.sleep(retry_delay)
 
 time.sleep({delay_seconds})
-if "not farming anything" in cmd("status").lower():
-    cmd("exit")
+if "not farming anything" in cmd({status_argv!r}).lower():
+    cmd({exit_argv!r})
 """
     subprocess.Popen(
         [sys.executable, "-c", child_code],
+        env={**os.environ, "UNLOCKER_API_HEADERS": headers},
         start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

@@ -7,3 +7,5 @@ csvs/
 jsons/
 completed/
 archifarm/
+# Local settings (may hold the ASF IPC password)
+settings.json

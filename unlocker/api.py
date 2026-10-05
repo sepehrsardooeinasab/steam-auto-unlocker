@@ -8,8 +8,22 @@ import sys
 import time
 from pathlib import Path
 
-API_URL = "http://127.0.0.1:1243/Api/Command"
-BOT_CONNECT_TIMEOUT = 60
+from unlocker.settings import SETTINGS
+
+API_URL = f"http://127.0.0.1:{SETTINGS['asf_port']}/Api/Command"
+BOT_CONNECT_TIMEOUT = SETTINGS["bot_connect_timeout"]
+# Extra request headers, fed to curl on stdin (-H @-) rather than as an
+# argument, so the IPC password never shows up in `ps` output.
+API_HEADERS = (f"Authentication: {SETTINGS['ipc_password']}\n"
+               if SETTINGS["ipc_password"] else "")
+
+
+def api_request_args(command):
+    """(argv, stdin) for a curl call sending one command to ASF's IPC."""
+    return (["curl", "-s", "-X", "POST", API_URL,
+             "-H", "Content-Type: application/json", "-H", "@-",
+             "-d", json.dumps({"Command": command})],
+            API_HEADERS)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ASF_DIR = PROJECT_ROOT / "archifarm"
@@ -194,7 +208,7 @@ def send_command(command):
     Steam session is fully ready). Bailing out on the first attempt instead
     would let that exception text be mistaken for real (e.g. empty-looking)
     command output by callers like send_alist."""
-    payload = json.dumps({"Command": command})
+    argv, headers = api_request_args(command)
     deadline = time.monotonic() + BOT_CONNECT_TIMEOUT
     printed_waiting = False
     reconnected = False
@@ -202,10 +216,7 @@ def send_command(command):
     while True:
         try:
             proc = subprocess.run(
-                ["curl", "-s", "-X", "POST", API_URL,
-                 "-H", "Content-Type: application/json",
-                 "-d", payload],
-                capture_output=True, text=True, timeout=30)
+                argv, input=headers, capture_output=True, text=True, timeout=30)
             response = json.loads(proc.stdout)
         except (subprocess.TimeoutExpired, json.JSONDecodeError):
             response = None
