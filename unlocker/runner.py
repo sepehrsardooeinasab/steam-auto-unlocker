@@ -22,6 +22,7 @@ from unlocker.settings import SETTINGS
 from unlocker.state import (
     DEFAULT_PROGRESS,
     cleanup_profile,
+    config_fingerprint,
     config_problems,
     list_profiles,
     load_config,
@@ -142,6 +143,17 @@ def _estimate_session(achievements, start_from, progress, first_run):
     return end, wait, duration
 
 
+def config_changed(config, progress):
+    """True when progress was saved against a different achievement order
+    than the config has now, so its saved position may point at a
+    different achievement. Progress from before fingerprints existed, or
+    for another appid (which gets reset anyway), doesn't count."""
+    return (progress["appid"] == config["appid"]
+            and progress["last_completed"] >= 0
+            and progress["config_hash"] is not None
+            and progress["config_hash"] != config_fingerprint(config))
+
+
 def _format_duration(seconds):
     hours, rem = divmod(int(seconds), 3600)
     minutes = rem // 60
@@ -195,7 +207,8 @@ def list_status():
             if config_problems(config):
                 rows.append((label, "-", "-", "-", "invalid config (run it to see why)"))
                 continue
-            status = _session_status(config, load_progress(progress_path))
+            progress = load_progress(progress_path)
+            status = _session_status(config, progress)
         except (json.JSONDecodeError, OSError, KeyError, ValueError) as e:
             rows.append((label, "-", "-", "-", f"unreadable ({e.__class__.__name__})"))
             continue
@@ -206,6 +219,8 @@ def list_status():
 
         number, total, count, duration, wait = status
         when = _format_duration(wait) if wait > 0 else "now"
+        if config_changed(config, progress):
+            when += " (config changed)"
         rows.append((label, f"{number}/{total}", f"~{_format_duration(duration)}", str(count), when))
 
     header = ("NAME", "SESSION", "DURATION", "#ACH", "READY IN")
@@ -240,6 +255,21 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
         print("All achievements already completed.")
         cleanup_profile(game_name)
         return
+
+    if config_changed(config, progress) and not time_only:
+        n = progress["last_completed"] + 1
+        print(f"The config's achievement order changed since this game was started. "
+              f"Progress is saved as {n} achievement{'s' if n != 1 else ''} done by position, "
+              f"so it may now point at different achievements.")
+        if force:
+            print("Not running with -f. Run without -f to confirm, or delete "
+                  f"{progress_path.name} to start over.")
+            return
+        if input("Continue from the same position anyway? [y/N] ").strip().lower() != "y":
+            print("Cancelled.")
+            return
+    # Every save from here on records the config it was made against.
+    progress["config_hash"] = config_fingerprint(config)
 
 
     # Cheap, ASF-independent estimate from the config alone, so the user can

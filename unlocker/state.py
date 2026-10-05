@@ -1,3 +1,4 @@
+import hashlib
 import os
 import sys
 import json
@@ -15,6 +16,9 @@ DEFAULT_PROGRESS = {
     "last_completed": -1,
     "next_unlock_at": None,
     "session_ends_at": None,
+    # Fingerprint of the config's achievement order when progress was saved
+    # (see config_fingerprint). None in progress files from before it existed.
+    "config_hash": None,
 }
 
 
@@ -98,6 +102,15 @@ def load_config(path):
         sys.exit(1)
 
     return config
+
+
+def config_fingerprint(config):
+    """Short hash of the appid and the order of achievement ids. Progress is
+    stored as a position in that list, so a change here means the saved
+    position may now point at a different achievement. Delay and session
+    edits don't change it, since they leave every position in place."""
+    ids = [a["id"] for a in config["achievements"]]
+    return hashlib.sha256(json.dumps([config["appid"], ids]).encode()).hexdigest()[:16]
 
 
 def load_progress(path):
