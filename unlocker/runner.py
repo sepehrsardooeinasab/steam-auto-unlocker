@@ -13,8 +13,8 @@ from unlocker.api import (
     ensure_asf_running,
     notify,
     schedule_asf_kill,
-    start_caffeinate,
-    stop_caffeinate)
+    start_keep_awake,
+    stop_keep_awake)
 from unlocker.state import (
     DEFAULT_PROGRESS,
     list_profiles,
@@ -50,7 +50,7 @@ def _session_bounds(achievements):
 
 class _Signalled(Exception):
     """Raised from a SIGHUP/SIGTERM handler, so the run unwinds through its
-    finally (stopping caffeinate) instead of dying on the spot."""
+    finally (stopping keep-awake) instead of dying on the spot."""
     def __init__(self, signum):
         super().__init__(signal.Signals(signum).name)
         self.signum = signum
@@ -203,7 +203,7 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
     """delay: seconds to wait before starting (-in). wait_ready: wait until
     the session can actually run — cooldown over and first unlock due — and
     start then (-w). Either way the wait happens after the confirmation
-    prompt, under caffeinate, and before ASF is touched."""
+    prompt, under keep-awake, and before ASF is touched."""
     config_path, progress_path = profile_paths(game_name)
 
     config = load_config(config_path)
@@ -311,9 +311,9 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
     # Nothing to wait out (e.g. a single-achievement session that fires right
     # away) means nothing to stay awake for — the run is over in seconds.
     awake_for = (max(start_at, ready_at) - now).total_seconds() + est_duration
-    caffeinate_proc = start_caffeinate() if awake_for > 0 else None
-    if caffeinate_proc is not None:
-        print(f"Caffeinate activated for {_format_duration(awake_for)}.")
+    keep_awake_proc = start_keep_awake() if awake_for > 0 else None
+    if keep_awake_proc is not None:
+        print(f"Keeping the system awake for {_format_duration(awake_for)}.")
 
     try:
         if start_at > datetime.now():
@@ -481,4 +481,4 @@ def run(game_name=None, force=False, time_only=False, delay=None, wait_ready=Fal
         notify(game_label, f"Crashed: {e.__class__.__name__}: {e}", error=True)
         raise
     finally:
-        stop_caffeinate(caffeinate_proc)
+        stop_keep_awake(keep_awake_proc)

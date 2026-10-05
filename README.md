@@ -68,6 +68,13 @@ The unlocker sends a desktop notification when a session finishes, when every ac
 - **macOS, basic (no install):** if `terminal-notifier` isn't installed, a plain notification is shown through `osascript`, with no logo and no auto-removal. If nothing appears, allow notifications for **Script Editor** in System Settings → Notifications.
 - **Linux:** needs `notify-send`. Install `libnotify-bin` on Debian/Ubuntu, or `libnotify` on Fedora/Arch. Errors are marked critical. "Done" notifications ask to expire after 30 minutes, though some desktops (e.g. GNOME) ignore that. Sounds depend on your desktop.
 
+### 6. Keeping the system awake
+
+While a session runs (including any `-w` / `-in` wait before it), the unlocker keeps the computer from sleeping so delays aren't stretched by a suspended machine.
+
+- **macOS:** uses the built-in `caffeinate`. Nothing to install.
+- **Linux:** uses `systemd-inhibit` (part of systemd) to hold a sleep/idle inhibitor. If it's missing or can't take the inhibitor (e.g. no logind session), the run goes ahead without it. Closing a laptop lid may still suspend it, depending on your desktop's lid settings.
+
 ## Layout
 
 - `unlocker/` — the Python package that drives unlocking:
