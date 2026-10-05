@@ -96,6 +96,7 @@ With randomness on, it applies to the delays between achievements and to the gap
 
 ### 8. Safety checks
 
+- **Config check:** before anything else, the config is checked for a valid `appid` and, on every achievement, a whole-number `id` (no duplicates), a `delay` of 0 or more and a true/false `new_session`. A broken config stops with a list of what's wrong, instead of failing partway through a session.
 - **Safe progress saves:** progress is written to a temporary file and then swapped in, so stopping a run mid-save can't corrupt it.
 
 ## Layout

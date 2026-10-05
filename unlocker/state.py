@@ -43,14 +43,58 @@ def list_profiles():
     return profiles
 
 
+def config_problems(config):
+    """Everything wrong with a config's shape, as messages (empty when it's
+    fine) — checked up front so a bad field can't surface as a KeyError
+    halfway through a session, after "play" was already sent."""
+    if not isinstance(config, dict):
+        return ["the file must be a JSON object"]
+    problems = []
+    appid = config.get("appid")
+    if isinstance(appid, bool) or not isinstance(appid, int) or appid <= 0:
+        problems.append(f"appid must be a positive whole number (got {appid!r})")
+
+    achievements = config.get("achievements")
+    if not isinstance(achievements, list) or not achievements:
+        return problems + ["no achievements found"]
+
+    seen = set()
+    for n, ach in enumerate(achievements, 1):
+        where = f"achievement #{n}"
+        if not isinstance(ach, dict):
+            problems.append(f"{where} isn't an object")
+            continue
+        ach_id, delay, new_session = ach.get("id"), ach.get("delay"), ach.get("new_session")
+        if isinstance(ach_id, bool) or not isinstance(ach_id, int) or ach_id <= 0:
+            problems.append(f"{where}: id must be a positive whole number (got {ach_id!r})")
+        elif ach_id in seen:
+            problems.append(f"{where}: id {ach_id} appears more than once")
+        else:
+            seen.add(ach_id)
+        if isinstance(delay, bool) or not isinstance(delay, int) or delay < 0:
+            problems.append(f"{where}: delay must be a whole number of seconds, 0 or more (got {delay!r})")
+        if not isinstance(new_session, bool):
+            problems.append(f"{where}: new_session must be true or false (got {new_session!r})")
+    return problems
+
+
 def load_config(path):
     if not path.exists():
         print(f"Missing {path}")
         sys.exit(1)
 
-    config = json.loads(path.read_text())
-    if not config.get("achievements"):
-        print("No achievements found in config.")
+    try:
+        config = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        print(f"{path.name} isn't valid JSON ({e}).")
+        sys.exit(1)
+    problems = config_problems(config)
+    if problems:
+        print(f"{path.name} has problems:")
+        for problem in problems[:10]:
+            print(f"  - {problem}")
+        if len(problems) > 10:
+            print(f"  ...and {len(problems) - 10} more.")
         sys.exit(1)
 
     return config

@@ -21,12 +21,13 @@ from unlocker.api import (
 from unlocker.settings import SETTINGS
 from unlocker.state import (
     DEFAULT_PROGRESS,
+    cleanup_profile,
+    config_problems,
     list_profiles,
-    profile_paths,
     load_config,
     load_progress,
-    save_progress,
-    cleanup_profile)
+    profile_paths,
+    save_progress)
 
 # See unlocker/settings.py for what each of these is for.
 ASF_SHUTDOWN_DELAY = SETTINGS["asf_shutdown_delay"]
@@ -191,8 +192,8 @@ def list_status():
         label = name or "(default)"
         try:
             config = json.loads(config_path.read_text())
-            if not config.get("achievements"):
-                rows.append((label, "-", "-", "-", "no achievements in config"))
+            if config_problems(config):
+                rows.append((label, "-", "-", "-", "invalid config (run it to see why)"))
                 continue
             status = _session_status(config, load_progress(progress_path))
         except (json.JSONDecodeError, OSError, KeyError, ValueError) as e:
